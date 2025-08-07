@@ -1,25 +1,36 @@
 
 #### Applying global measures to areal maps
 ### VMR
-sapply(UT_list[2:4], function(x) VMR_function(UT_list[[1]], x))
-sapply(OV_list[2:4], function(x) VMR_function(OV_list[[1]], x))
-sapply(NB_list[2:4], function(x) VMR_function(NB_list[[1]], x))
+VMRA = ((c(
+  sapply(UT_list[1:3], function(x) VMR_function(UT_list[[4]], x)),
+  sapply(OV_list[1:3], function(x) VMR_function(OV_list[[4]], x)),
+  sapply(NB_list[1:3], function(x) VMR_function(NB_list[[4]], x))
+  
+)))
+
 
 ### MMR
-sapply(UT_list[2:4], function(x) MMR_function(UT_list[[1]], x, option = "MMR"))
-sapply(OV_list[2:4], function(x) MMR_function(OV_list[[1]], x, option = "MMR"))
-sapply(NB_list[2:4], function(x) MMR_function(NB_list[[1]], x, option = "MMR"))
+MMRA = ((c(
+  sapply(UT_list[1:3], function(x) MMR_function(UT_list[[4]], x, option = "MMR")),
+  sapply(OV_list[1:3], function(x) MMR_function(OV_list[[4]], x, option = "MMR")),
+  sapply(NB_list[1:3], function(x) MMR_function(NB_list[[4]], x, option = "MMR"))
+)))
 
 ### MMR*
-sapply(UT_list[2:4], function(x) MMR_function(UT_list[[1]], x, option = "MMR*"))
-sapply(OV_list[2:4], function(x) MMR_function(OV_list[[1]], x, option = "MMR*"))
-sapply(NB_list[2:4], function(x) MMR_function(NB_list[[1]], x, option = "MMR*"))
+MMRsA = ((c(
+  sapply(UT_list[1:3], function(x) MMR_function(UT_list[[4]], x, option = "MMR*")),
+  sapply(OV_list[1:3], function(x) MMR_function(OV_list[[4]], x, option = "MMR*")),
+  sapply(NB_list[1:3], function(x) MMR_function(NB_list[[4]], x, option = "MMR*"))
+)))
 
 ### MMR**
-sapply(UT_list[2:4], function(x) MMR_function(UT_list[[1]], x, option = "MMR**"))
-sapply(OV_list[2:4], function(x) MMR_function(OV_list[[1]], x, option = "MMR**"))
-sapply(NB_list[2:4], function(x) MMR_function(NB_list[[1]], x, option = "MMR**"))
+MMRssA = ((c(
+  sapply(UT_list[1:3], function(x) MMR_function(UT_list[[4]], x, option = "MMR**")),
+  sapply(OV_list[1:3], function(x) MMR_function(OV_list[[4]], x, option = "MMR**")),
+  sapply(NB_list[1:3], function(x) MMR_function(NB_list[[4]], x, option = "MMR**"))
+)))
 
+View(cbind(VMRA,MMRsA,MMRssA))
 # morans I
 sapply(UT_geolist[1:4], function(x) moransI_area_func(x, version = "global"))
 sapply(OV_geolist[1:4], function(x) moransI_area_func(x, version = "global"))
@@ -198,3 +209,4 @@ for (i in 1:length(measure_names)) {
   
   
 }
+
