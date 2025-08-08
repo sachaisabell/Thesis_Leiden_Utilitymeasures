@@ -1,0 +1,314 @@
+---
+title: "survey maps1"
+author: "Sacha van de Hoef"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+https://paezha.github.io/spatial-analysis-r/point-pattern-analysis-i.html
+```{r}
+library(ggplot2)
+library(sdcSpatial)
+library(gridExtra)
+library(dplyr)
+library(raster)
+
+plot_func = function(data, title, type){
+  
+  if(type == "point") func = geom_point()
+  if(type == "heatmap") func = ggdensity::geom_hdr(probs = seq(0.01,1-0.01,0.01))
+  
+  plot = ggplot(data, aes(x, y)) + 
+    func + 
+    theme_classic()+
+    theme(aspect.ratio = 1, legend.position = "none") +
+    ggtitle(title)
+  
+  return(plot)
+}
+
+
+### sorta normal
+ggplot() + geom_point(data = spData::boston.c, aes(LON,LAT)) 
+
+### multiple hotspots
+ggplot() + geom_point(data = spData::nydata, aes(X,Y)) 
+
+### random
+data4 = data.frame(x = runif(500), y = runif(500))
+ggplot(data4, aes(x, y)) + geom_point()
+
+### small clusters
+data7 = data.frame(x = c(sapply(runif(100), function(x) rnorm(5,x,0.01))) + rnorm(100,0.5,0.01), y = c(sapply(runif(100), function(x) rnorm(5,x,0.01))) + rnorm(100,0.5,0.01))
+ggplot(data7, aes(x, y)) + geom_point()
+
+### consistent pattern
+data5 = data.frame(x = rep(seq(0,1,0.1), 11) + rnorm(121,0,0.01), y = sort(rep(seq(0,1,0.1),11)) + rnorm(121,0,0.01))
+ggplot(data5, aes(x, y)) + geom_point()
+
+
+```
+
+### first dataset -> normal (sorta)
+```{r}
+### generating data
+set.seed(1)
+data1 = spData::boston.c[,c("LON","LAT")]; names(data1) <- c("x","y")
+
+random1 = mask_random(data1[,1:2],0.5 * max(dist(data1)))
+grid1 = mask_grid(data1[,1:2], diff(range(data1$x))/80)
+vonoroi1 = mask_voronoi(data1[,1:2])
+weighted1 = mask_weighted_random(data1[,1:2], k=5, r= 0.5* max(dist(data1)))
+
+
+### defining point plots
+data_list <- list(original = data1, 
+                  random = random1, 
+                  grid = grid1, 
+                  vonoroi = vonoroi1, 
+                  weighted = weighted1)
+
+
+pplots1 <- lapply(names(data_list), function(nm) plot_func(data_list[[nm]], nm, "point"))
+
+```
+
+```{r}
+### grids
+grids1 = lapply(names(data_list), function(nm) sdc_raster(data_list[[nm]], var = rep(1, 1000), r = 0.02))
+names(grids1) = names(data_list)
+
+lapply(names(grids1), function(nm)  plot(grids1[[nm]]$value$sum, main = nm))
+
+
+```
+
+
+```{r}
+hplots1 <- lapply(names(data_list), function(nm) plot_func(data_list[[nm]], nm, "heatmap"))
+
+```
+
+or easier this way
+```{r}
+p.g.h.maps = function(data1){
+  maxdist = max(dist(data1))
+  
+  # defining the datasets
+  random1 = mask_random(data1[,1:2], 0.1 * maxdist)
+  grid1 = mask_grid(data1[,1:2], diff(range(data1$x))/80)
+  vonoroi1 = mask_voronoi(data1[,1:2])
+  weighted1 = mask_weighted_random(data1[,1:2], k=5, r= 0.5* maxdist)
+  
+  data_list <- list(original = data1, 
+                  random = random1, 
+                  grid = grid1, 
+                  vonoroi = vonoroi1, 
+                  weighted = weighted1)
+
+  # point plots
+  pplots1 <- lapply(names(data_list), function(nm) plot_func(data_list[[nm]], nm, "point"))
+  
+  # grid plots
+  grids1 = lapply(names(data_list), function(nm) sdc_raster(data_list[[nm]], var = rep(1, 1000), r = diff(range(data_list[[nm]]$x))/20))
+  names(grids1) = names(data_list)
+  #gplots1 <- lapply(names(grids1), function(nm)  plot(grids1[[nm]]$value$sum, main = nm))
+  
+  # heatmaps
+  hplots1 <- lapply(names(data_list), function(nm) plot_func(data_list[[nm]], nm, "heatmap"))
+  
+  
+  return(list(point = pplots1,
+              grid = grids1,
+              heatmap = hplots1))
+}
+
+set.seed(1)
+boston_data = spData::boston.c[,c("LON","LAT")]; names(boston_data) <- c("x","y")
+
+maps1 = p.g.h.maps(boston_data)
+maps1$point[[1]]$data # retrieve data for point
+maps1$grid[[1]]$value$sum # retrieve data for grid
+maps1$heatmap[[1]]$data # retrieve data for heatmap
+
+
+# show plots
+maps1$point
+maps1$heatmap
+lapply(names(maps1$grid), function(nm)  plot(maps1$grid[[nm]]$value$sum, main = nm))
+
+
+```
+
+### now for the second dataset -> few clusters
+```{r}
+nydat = spData::nydata[,c("X","Y")]; names(nydat) <- c("x","y")
+
+maps2 = p.g.h.maps(nydat)
+maps2$point
+maps2$heatmap
+lapply(names(maps2$grid), function(nm)  plot(maps2$grid[[nm]]$value$sum, main = nm))
+
+```
+
+### third dataset -> random
+```{r}
+set.seed(1)
+data4 = data.frame(x = runif(500), y = runif(500))
+
+maps3 = p.g.h.maps(data4)
+maps3$point
+maps3$heatmap
+lapply(names(maps3$grid), function(nm)  plot(maps3$grid[[nm]]$value$sum, main = nm))
+
+```
+
+### fourth dataset -> small clusters
+```{r}
+set.seed(1)
+data7 = data.frame(x = c(sapply(runif(100), function(x) rnorm(5,x,0.01))) + rnorm(100,0.5,0.01), y = c(sapply(runif(100), function(x) rnorm(5,x,0.01))) + rnorm(100,0.5,0.01))
+
+maps4 = p.g.h.maps(data7)
+maps4$point
+maps4$heatmap
+lapply(names(maps4$grid), function(nm)  plot(maps4$grid[[nm]]$value$sum, main = nm))
+
+```
+
+### fifth dataset -> consistent pattern
+```{r}
+set.seed(1)
+data5 = data.frame(x = rep(seq(0,1,0.1), 11) + rnorm(121,0,0.01), y = sort(rep(seq(0,1,0.1),11)) + rnorm(121,0,0.01))
+
+maps5 = p.g.h.maps(data5)
+maps5$point
+maps5$heatmap
+lapply(names(maps5$grid), function(nm)  plot(maps5$grid[[nm]]$value$sum, main = nm))
+
+```
+
+```{r}
+
+#### saving the plots
+sdc = c("original","random","grid","vonoroi","weighted")
+data_types = c("normal", "clustered","random","smallclusters","consistent")
+map_types = c("point","grid","heat")
+
+for (i in 1:length(data_types)) {
+  for (j in 1:length(sdc)) {
+    current = get(paste0("maps",i))
+    
+    ggsave(paste0(data_types[i],"_", sdc[j],"_", map_types[3],".png"), current[[3]][[j]]) # 1 is point, 3 is heatmap
+     
+    
+  }
+}
+
+
+
+for (i in 1:length(data_types)) {
+  for (j in 1:length(sdc)) {
+    current = get(paste0("maps",i))
+    
+    # open file and save plot
+    png(paste0(data_types[i],"_", sdc[j],"_", map_types[2],".png"))
+    plot(current[[2]][[j]]$value$sum, main = sdc[j]) # 2 for grids
+    dev.off()
+  }
+}
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

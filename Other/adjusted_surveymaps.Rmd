@@ -1,0 +1,142 @@
+---
+title: "adjusted_surveymaps"
+author: "Sacha van de Hoef"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+plot_func = function(data, title, type, xlimits, ylimits,bin = NULL, fill_limits = NULL){
+  
+  p = ggplot(data, aes(x, y))
+  
+  if(type == "point") p= p + geom_point()
+  if(type == "heatmap") p=p + ggdensity::geom_hdr(probs = seq(0.00001,0.99,0.1)) 
+
+  if(type == "grid") p=p + stat_bin2d(binwidth = bin) + scale_fill_viridis_c(name = "Point Count", option = "C", limits = fill_limits)
+  
+  plot = p + 
+    theme_classic()+
+    theme(aspect.ratio = 1, legend.position = "right") +
+    ggtitle(title) +
+    xlim(xlimits) + ylim(ylimits) 
+    guides(fill = guide_legend(title = "Title"))
+  
+  return(plot)
+}
+
+
+p.g.h.maps = function(data1){
+  maxdist = max(dist(data1))
+  
+  # defining the datasets
+  random1 = mask_random(data1[,1:2], 0.1 * maxdist)
+  grid1 = mask_grid(data1[,1:2], diff(range(data1$x))/80)
+  vonoroi1 = mask_voronoi(data1[,1:2])
+  weighted1 = mask_weighted_random(data1[,1:2], k=5, r= 0.5* maxdist)
+  
+  df_all = rbind(data1, random1, grid1, vonoroi1, weighted1)
+  
+  xlim = range(df_all[,1])
+  ylim = range(df_all[,2])
+  
+  data_list <- list(original = data1, 
+                  random = random1, 
+                  grid = grid1, 
+                  vonoroi = vonoroi1, 
+                  weighted = weighted1)
+
+  # point plots
+  pplots1 <- lapply(names(data_list), function(nm) plot_func(data_list[[nm]], nm, "point", xlim, ylim))
+  
+  # grid plots
+  bin_width <- c(diff(xlim) / 35, diff(ylim) / 35)
+  bin_data <- ggplot(df_all, aes(x, y)) + stat_bin2d(binwidth = bin_width)
+  binned_df <- ggplot_build(bin_data)$data[[1]]
+  max_count <- max(binned_df$count, na.rm = TRUE); print(max_count)
+  
+  grids1 <- lapply(names(data_list), function(nm) plot_func(data_list[[nm]], nm, "grid", xlim, ylim, bin = bin_width, fill_limits = c(0,max_count*(1/3))))
+  
+  
+  # heatmaps
+  hplots1 <- lapply(names(data_list), function(nm) plot_func(data_list[[nm]], nm, "heatmap", xlim, ylim))
+  
+  
+  return(list(point = pplots1,
+              grid = grids1,
+              heatmap = hplots1))
+}
+
+set.seed(1)
+boston_data = spData::boston.c[,c("LON","LAT")]; names(boston_data) <- c("x","y")
+
+maps1 = p.g.h.maps(boston_data)
+maps1$point[[1]]$data # retrieve data for point
+maps1$grid[[1]] # retrieve data for grid
+maps1$heatmap[[1]]$data # retrieve data for heatmap
+
+
+# show plots
+maps1$point
+maps1$heatmap
+maps1$grid[[1]]$data
+lapply(names(maps1$grid), function(nm)  plot(maps1$grid[[nm]]$value$sum, main = nm))
+
+
+another = p.g.h.maps(nydat)
+another$grid
+```
+
+
+
+```{r}
+bin_width <- c(1/60, 1/60)
+
+
+# Manually calculate counts per bin across all datasets
+bin_data <- ggplot(boston_data, aes(x, y)) +
+  stat_bin2d(binwidth = bin_width)
+
+# Extract binned data to compute the max count
+binned_df <- ggplot_build(bin_data)$data[[1]]
+max_count <- max(binned_df$count, na.rm = TRUE)
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

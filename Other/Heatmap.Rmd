@@ -1,0 +1,249 @@
+---
+title: "heatmap"
+author: "Sacha van de Hoef"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## General Setup
+### Libraries/sources
+```{r}
+# retrieve basic functions for contours and center/scaling
+source("hotspot_functions.R")
+
+## libraries
+library(dplyr)
+library(ggplot2)
+library(lidaRtRee)
+library(sf)
+library(purrr)
+library(sdcSpatial)
+library(tigers)
+library(raster)
+
+```
+
+### Data
+Using the data 'dwellings' here, and using random reallocation as SDC method
+```{r}
+data_og = dwellings[,1:2]
+data_safe = mask_random(data_og, r = 100)
+
+plot(data_og)
+points(data_safe, col = "Red")
+
+
+map_original = sdc_raster(dwellings[,1:2], dwellings$consumption)
+map_safe = protect_smooth(map_original)
+
+
+ogplot = ggplot(data_og, aes(x = x, y = y)) +
+  ggdensity:: geom_hdr()
+
+safeplot = ggplot(data_safe[1:1000,], aes(x = x, y = y)) +
+  ggdensity:: geom_hdr() + 
+  theme(legend.position = "none",axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank())
+
+# to do the same thing from the saved maps
+maps1$heatmap[[1]] + theme(legend.position = "none",axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank())
+
+ggsave("plot_safe.png", plot = safeplot, width = 6, height = 6, dpi = 300)
+
+library(magick)
+
+img1 <- magick:: image_read("plot_safe.png")
+img2 <- image_read("plot_original.png")
+
+# Convert to grayscale if necessary
+img1_gray <- magick:: image_convert(img1, colorspace = "gray")
+img2_gray <- image_convert(img2, colorspace = "gray")
+
+dim(img2_gray)
+raster.img2 = as.raster(img2_gray)
+values(raster.img2) <- gray_values
+plot(raster.img2)
+
+# Extract pixel values
+mat1 <- as.integer(magick:: image_data(img1_gray, "gray")) 
+mat2 <- as.numeric(image_data(img2_gray))
+
+
+im1 = magick:: image_data(img1_gray)
+unique(as.integer(im1[1:1800]))
+
+magick:: image_attributes(img1_gray)
+
+ras.img = as.raster(img1_gray)
+hex_colors = unique(ras.img)
+dim(ras.img)
+
+# Your grayscale hex values
+hex_colors <- c("#ffffffff", "#eeeeeeff", "#ebebebff", "#f4f4f4ff", "#f0f0f0ff")
+
+# Function to extract the red channel and convert to numeric
+get_gray_value <- function(hex) {
+  red <- substr(hex, 2, 3)           # Extract red component (RR)
+  return(as.numeric(strtoi(red, base=16)))  # Convert hex to decimal
+}
+
+# Apply function
+gray_values <- sapply(ras.img, get_gray_value)
+
+# Result
+print(gray_values)
+
+# back into image
+gray_matrix = matrix(gray_values, nrow = 2073, ncol = 2263)
+image(t(apply(gray_matrix, 2, rev)), col = gray.colors(256), axes = FALSE, asp = 1)
+
+
+grey.rast = raster(nrow = 2263 , ncol = 2073); raster::extent(grey.rast) = (c(0,2073,0,2263))#extent(grey.rast) = (c(rep(c(-50,50),2)))
+values(grey.rast) <- gray_values
+plot(grey.rast, asp = 1)
+
+plot(matrix(rep(1:2073, 2263), byrow = TRUE), matrix(rep(1:2263, 2073), byrow = FALSE))
+
+
+# input is an image here saved in the same working directory
+heatmap_func = function(safe, original, measure = c("simple", "ratio", "hedi")){
+  img_safe <- magick::image_read(safe) %>% magick:: image_convert(colorspace = "gray")  %>% as.raster()
+  img_original <- magick::image_read(original) %>% magick:: image_convert(colorspace = "gray") %>% as.raster()
+  
+  safe_values <- sapply(img_safe, get_gray_value)
+  original_values <- sapply(img_original, get_gray_value)
+  
+  if(measure == "hedi") return(mean(abs(safe_values - original_values)))
+  else if(measure == "ratio") plot_vals = log(original_values / safe_values)
+  else if(measure == "simple") plot_vals = abs(safe_values - original_values)
+  
+  grey.rast = raster(nrow = dim(img_safe)[1], ncol = dim(img_safe)[2]) # assuming safe and original have the same dimensions
+  values(grey.rast) <- plot_vals
+  plot(grey.rast)
+    
+}
+
+heatmap_func("plot_safe.png","plot_safe.png","ratio")
+
+######### STILL HAVE TO MAKE SURE IT DOES NOT TAKE THE AXES ETC WITH IT, so make a transparent background or something
+```
+
+```{r}
+
+library(MASS)
+
+
+data1 = data_og
+data2 = data_safe
+
+
+# Define a common grid
+xlim <- c(min(data1$x, data2$x), max(data1$x, data2$x))
+ylim <- c(min(data1$y, data2$y), max(data1$y, data2$y))
+n <- 100  # number of grid points (higher = finer resolution)
+
+# Compute density grids
+dens1 <- kde2d(data1$x, data1$y, n = n, lims = c(xlim, ylim))
+dens2 <- kde2d(data2$x, data2$y, n = n, lims = c(xlim, ylim))
+
+# Calculate difference matrix
+diff_matrix <- dens1$z - dens2$z
+
+library(tidyverse)
+
+diff_df <- expand.grid(x = dens1$x, y = dens1$y) %>%
+  mutate(density_diff = as.vector(diff_matrix))
+
+ggplot(diff_df, aes(x = x, y = y, fill = density_diff)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  coord_fixed() +
+  theme_minimal()
+
+
+ggplot(dens1, aes(x = x, y = y)) +
+  geom_tile() 
+
+
+heatmap_func = function(safe, original, measure = c("simple", "ratio", "hedi"), n = 100){
+  # n is defines the grid resolution
+  
+  xlim <- c(min(safe$x, original$x), max(safe$x, original$x))
+  ylim <- c(min(safe$y, original$y), max(safe$y, original$y))
+
+  # Compute density grids
+  dens1 <- kde2d(safe$x, safe$y, n = n, lims = c(xlim, ylim))
+  dens2 <- kde2d(original$x, original$y, n = n, lims = c(xlim, ylim))
+ 
+  rdens <- raster(nrows = n, ncol = n, xmn = xlim[1], ymn= ylim[1], xmx = xlim[2], ymx = ylim[2])
+  
+  if(measure == "hedi") return(mean(abs(dens1$z - dens2$z)))
+  else if(measure == "ratio") plot_vals = log(dens2$z / dens1$z)
+  else if(measure == "simple") plot_vals = abs(dens1$z - dens2$z)
+  
+  par(mfrow = c(1,3))
+  values(rdens) = dens1$z; plot(rdens)
+  values(rdens) = dens2$z; plot(rdens)
+  values(rdens) = plot_vals; plot(rdens)
+    
+}
+
+
+
+heatmap_func(data_safe, data_og, "ratio")
+
+```
+
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

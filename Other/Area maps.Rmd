@@ -1,0 +1,195 @@
+---
+title: "Area maps"
+author: "Sacha van de Hoef"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## General Setup
+### Libraries/sources
+```{r}
+# retrieve basic functions for contours and center/scaling
+source("hotspot_functions.R")
+
+## libraries
+library(dplyr)
+library(ggplot2)
+library(lidaRtRee)
+library(sf)
+library(purrr)
+library(sdcSpatial)
+library(tigers)
+library(raster)
+
+```
+
+### Data
+Using the data 'dwellings' here, and using random reallocation as SDC method
+```{r}
+data_og = dwellings[,1:2]
+data_safe = mask_random(data_og, r = 100)
+
+plot(data_og)
+points(data_safe, col = "Red")
+```
+
+
+
+```{r}
+library("geodata")
+NLD0 = gadm("NLD", level=0, path="C:/Users/1glas/Downloads/", version="latest", resolution=1)
+NLD1 = gadm("NLD", level=1, path="C:/Users/1glas/Downloads/", version="latest", resolution=1)
+NLD2 = gadm("NLD", level=2, path="C:/Users/1glas/Downloads/", version="latest", resolution=1)
+
+plot(NLD0)
+plot(NLD1)
+
+NLD1$NAME_1[14] =  "Zuid Holland"
+
+plot(NLD0, axes = TRUE, xlim = c(5,6), ylim = c(52,52.5)); points(dwel2t$geometry, col = "red", pch = 20, lwd = 5)
+
+
+dwel2 = sf::st_as_sf(dwellings[,1:2], coords = c("x","y"), crs = "EPSG:28992")
+plot(dwel2)
+
+
+st_crs(NLD0); st_crs(dwel2)
+
+
+dwel2t = st_transform(dwel2, crs = st_crs(NLD0))
+```
+
+```{r}
+library("cbsodataR")
+
+data("meuse")
+coordinates(meuse) <- ~x+y
+
+#	 proj4string(meuse) <- CRS("+init=epsg:28992")
+ proj4string(meuse) <- CRS(
+  paste("+proj=sterea +lat_0=52.15616055555555 +lon_0=5.38763888888889",
+    "+k=0.9999079 +x_0=155000 +y_0=463000 +ellps=bessel +units=m", 
+    "+no_defs +datum=WGS84")
+ )
+
+meuse$soilFac = factor(meuse$soil, levels=c(1,2,3), 
+	labels=c("Calcareous","Non-Calc's","Red Brick"))
+
+
+meuse2t = st_transform(meuse2, crs = st_crs(NLD0))
+
+meuse2 = st_as_sf(meuse)
+plot(NLD0, axes = TRUE); points(meuse2t$geometry, col = "red", pch = 20, lwd = 5)
+plot(meuse)
+
+meuse2t$geometry
+
+plot(NLD1)
+```
+NICE!!
+```{r}
+
+cities = read_csv("C:/Users/1glas/OneDrive/Bureaublad/Master Statistics and Datascience/Thesis/Programming/Thesis-SDC/worldcities.csv")
+cities = cities %>% filter(country == "Netherlands")
+coordinates(cities) <- c("lng", "lat") 
+proj4string(cities) <- CRS("+init=epsg:4326")
+
+cities = st_as_sf(cities)
+NLD11 = st_as_sf(NLD1) %>% filter(NAME_1 %in% NLD1corr[c(1:5,7:12,14)])
+
+
+NLD1corr = NLD1$NAME_1
+
+NLD11$NAME_1
+
+
+
+plot(NLD1$geometry, axes = TRUE)
+points(cities$geometry, pch = 20, col = "red", lwd = 0.5)
+```
+
+```{r}
+joined = st_join(cities, NLD11)
+
+table(joined$NAME_1)
+
+city_count <- joined %>%
+  group_by(admin_name) %>%  # or whatever the province name column is
+  summarise(cities = n())
+
+
+colnames(city_count)[colnames(city_count) == "admin_name"] <- "NAME_1"
+
+
+count.p.province = st_join(city_count, NLD11)
+
+NLD1$NAME_1
+
+
+left_join(city_count, NLD11, by = "NAME_1")
+
+
+
+ggplot(count.p.province) +
+  geom_sf(aes(fill = cities), color = "white") +
+  scale_fill_viridis_c(option = "magma", na.value = "grey90") +
+  labs(title = "Dwellings per Province in the Netherlands",
+       fill = "Dwellings") +
+  theme_minimal()
+
+
+viridis::cividis(10)
+
+plot(NLD11["NAME_1"], col = viridis::cividis(city_count$cities))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

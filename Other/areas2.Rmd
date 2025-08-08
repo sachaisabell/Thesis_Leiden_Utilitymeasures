@@ -1,0 +1,586 @@
+---
+title: "Untitled"
+author: "Sacha van de Hoef"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(sf)
+library(dplyr)
+library(ggplot2)
+
+# Load shapefile of provinces
+provinces <- st_read("C:/Users/1glas/Downloads/gadm41_NLD_shp (1)/gadm41_NLD_1.shp")
+provinces$NAME_1[14] =  "Zuid-Holland"
+names_prov = provinces$NAME_1
+
+provinces1 = provinces %>% filter(NAME_1 %in% names_prov[c(1:5,7:12,14)])
+
+
+
+# Load city data (example: data frame with a province column)
+cities = readr:: read_csv("C:/Users/1glas/OneDrive/Bureaublad/Master Statistics and Datascience/Thesis/Programming/Thesis-SDC/worldcities.csv")
+cities = cities %>% filter(country == "Netherlands")
+colnames(cities)[colnames(cities) == "admin_name"] <- "NAME_1"
+
+city_counts <- cities %>%
+  group_by(NAME_1) %>%
+  summarise(city_count = n())
+
+provinces_data <- provinces1 %>%
+  left_join(city_counts, by = c("NAME_1" = "NAME_1"))  # Replace with actual column names
+
+provinces_data$city_count
+
+plot1 = ggplot(provinces_data, aes(fill = city_count)) +
+  geom_sf() +
+  #scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  scale_fill_gradientn(colours = c("darkblue","lightblue","green", "yellow", "red")) + 
+  labs(title = "Number of Cities per Province",
+       fill = "City Count")+
+  theme(
+         panel.background = element_rect(fill='transparent'),
+         plot.background = element_rect(fill='transparent', color=NA),
+         panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank(),
+         legend.background = element_rect(fill='transparent'),
+         legend.box.background = element_rect(fill='transparent')
+       )
+
+ggsave('plot1.png', plot1, bg='transparent')
+```
+
+simple heat plot
+```{r}
+
+library(ggplot2)
+library(sf)
+
+plot3 <- ggplot() +
+  geom_sf(data = provinces_data, fill = NA, color = "grey50") +
+  stat_density_2d(
+    data = cities,aes(cities$geometry),
+    geom = "polygon",
+    color = NA,
+    contour = TRUE
+  ) +
+  scale_fill_viridis_c(option = "plasma", na.value = "white") +
+  theme_minimal() +
+  labs(title = "City Density Heatmap",
+       fill = "Density") +
+  theme(
+    panel.background = element_rect(fill='transparent'),
+    plot.background = element_rect(fill='transparent', color=NA),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.background = element_rect(fill='transparent'),
+    legend.box.background = element_rect(fill='transparent')
+  )
+
+
+ggsave('plot3.png', plot3, bg='transparent')
+
+```
+
+
+
+```{r}
+
+cities_safe = mask_random(cities[,c("lng","lat")], 1.5)
+cities2  = cities
+cities2$lng = cities_safe$lng
+cities2$lat = cities_safe$lat
+
+city_counts <- cities2 %>%
+  group_by(NAME_1) %>%
+  summarise(city_count = n())
+
+provinces_data <- provinces1 %>%
+  left_join(city_counts, by = c("NAME_1" = "NAME_1"))  # Replace with actual column names
+
+provinces_data$city_count
+
+ggplot(provinces_data) +
+  geom_sf(aes(fill = city_count)) +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Number of Cities per Province",
+       fill = "City Count")
+
+```
+
+```{r}
+
+cities_sf <- st_as_sf(cities2, coords = c("lng", "lat"), crs = 4326)  # WGS84
+
+# This adds province attributes to each city based on location
+cities_with_province <- st_join(cities_sf, provinces, join = st_within)
+
+city_counts <- cities_with_province %>%
+  st_drop_geometry() %>%  # drop spatial geometry for grouping
+  group_by(NAME_1.y) %>%
+  summarise(city_count = n())
+
+provinces_data <- provinces %>%
+  left_join(city_counts, by = c("NAME_1" = "NAME_1.y"))
+
+
+plot2 = ggplot() +
+  geom_sf(data = provinces_data, aes()) +
+  geom_sf(data = cities, color = "black", size = 1, shape = 21, fill = "black") +
+  scale_fill_viridis_c(option = "plasma", na.value = "white") +
+  theme_minimal() +
+  labs(title = "Number of Cities per Province with City Locations",
+       fill = "City Count")+
+  theme(
+         panel.background = element_rect(fill='transparent'),
+         plot.background = element_rect(fill='transparent', color=NA),
+         panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank(),
+         legend.background = element_rect(fill='transparent'),
+         legend.box.background = element_rect(fill='transparent')
+       )
+
+ggsave('plot2.png', plot2, bg='transparent')
+
+
+
+```
+
+now per municipality
+```{r}
+provinces <- st_read("C:/Users/1glas/Downloads/gadm41_NLD_shp (1)/gadm41_NLD_2.shp")
+
+cities_sf <- st_as_sf(cities, coords = c("lng", "lat"), crs = 4326)  # WGS84
+
+# This adds province attributes to each city based on location
+cities_with_province <- st_join(cities_sf, provinces, join = st_intersection)
+
+city_counts <- cities_with_province %>%
+  st_drop_geometry() %>%  # drop spatial geometry for grouping
+  group_by(NAME_2) %>%
+  summarise(city_count = n())
+
+provinces_data <- provinces %>%
+  left_join(city_counts, by = c("NAME_2" = "NAME_2"))
+
+provinces_data$city_count[is.na(provinces_data$city_count)] = 0
+
+
+ggplot() +
+  geom_sf(data = provinces_data, aes(fill = city_count)) +
+  geom_sf(data = cities_sf, color = "black", size = 1, shape = 21, fill = "white") +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Number of Cities per Province with City Locations",
+       fill = "City Count")
+
+
+```
+
+
+
+
+
+```{r}
+# getting areas
+st_area(provinces_data$geometry)
+
+# getting centroids
+centroids = st_centroid(provinces_data$geometry)
+
+ggplot() +
+  geom_sf(data = provinces_data, aes(fill = city_count)) +
+  geom_sf(data = centroids, color = "black", size = 1, shape = 21, fill = "white") +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Number of Cities per Province with City Locations",
+       fill = "City Count")
+
+
+```
+
+```{r}
+nnp = st_nearest_points(centroids, centroids)
+
+ggplot() +
+  geom_sf(data = provinces_data, aes(fill = city_count)) +
+  #geom_sf(data = st_nearest_points(centroids, centroids), color = "black", size = 1, shape = 21, fill = "white") +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Number of Cities per Province with City Locations",
+       fill = "City Count")
+
+library(spdep)
+
+province_nn = poly2nb(provinces_data$geometry)
+nb_B <- nb2mat(province_nn, style="C", zero.policy=TRUE)
+
+
+
+```
+
+Testing local moran's I
+```{r}
+
+local_MI_function = function(data, w1){
+  n = length(data)
+  x.bar = mean(data)
+  LMIs = rep(NA,n)
+
+  for (i in 1:n) {
+    num = den = 0
+  
+    for (j in 1:n) {
+      num = num + w1[j,i]*(data[j] - x.bar)
+      den = den + (data[j] - x.bar)^2
+    }
+  
+    LMIs[i] = (data[i] - x.bar) * num / (den * 1/n)
+  }
+  
+  return(LMIs)
+}
+
+
+provinces_data$MRI =  c(rep(1,160), rep(2,355-160))#  
+LMRI = local_MI_function(provinces_data$MRI, nb_B)
+
+ggplot() +
+  geom_sf(data = provinces_data, aes(fill = city_count)) +
+  geom_sf(data = cities_sf, color = "black", size = 1, shape = 21, fill = "white") +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Number of Cities per Province with City Locations",
+       fill = "City Count")
+
+library(ape)
+Moran.I(provinces_data$MRI, nb_B)
+```
+
+
+now trying to define hotspots from this
+```{r}
+muni_with_2_cities <- provinces_data %>%
+  filter(city_count == 2)
+
+
+muni_dissolved <- muni_with_2_cities %>%
+  mutate(dummy = 1) %>%  # Temporary dummy column to allow grouping
+  st_union() %>%
+  st_cast("POLYGON") %>%  # Separate disconnected parts
+  st_sf() 
+
+
+muni_nn = poly2nb(muni_with_2_cities)
+
+adj_matrix <- st_touches(muni_with_2_cities)
+
+library("igraph")
+
+g <- graph_from_adj_list(adj_matrix)
+components <- components(g)$membership
+
+# Attach cluster ID to each polygon
+muni_with_2_cities$group_id <- components
+merged_muni <- muni_with_2_cities %>%
+  group_by(group_id) %>%
+  summarise(geometry = st_union(geometry)) %>%
+  ungroup()
+
+ggplot() +
+  geom_sf(data = merged_muni, fill = "orange", color = "black") +
+  theme_minimal() +
+  labs(title = "Merged Municipalities with 2 Cities")
+
+
+```
+
+```{r}
+geo_hs = merged_muni[1,]
+st_crs(geo_hs) <- NA
+
+box_counting(10, geo_hs$geometry)
+
+hotspot_safe[1,]
+```
+
+
+
+```{r}
+library(spatstat.geom)
+
+# Use a projected CRS (EPSG:28992 is ideal for the Netherlands)
+nl.crs <- st_crs(28992)
+
+# Transform the outline and cities
+nl_outline <- st_union(provinces_data) %>% st_transform(nl.crs)
+cities_proj <- st_transform(cities, nl.crs)
+
+cities_proj = st_as_sf(cities, coords = c("lng", "lat"), crs = 4326) %>% st_transform(nl.crs)
+
+
+# Now convert to spatstat format
+ga_campgrounds_ppp <- as.ppp(cities_proj$geometry, W = as.owin(nl_outline))
+
+plot(density(ga_campgrounds_ppp))
+
+library(spatstat)
+dens <- stars::st_as_stars(density(ga_campgrounds_ppp, dimxy = 1000))
+dens1 <- (density(ga_campgrounds_ppp, dimxy = 1000))
+
+
+plot(dens, col = c("red","blue"))
+plot(dens1, col = 1:5)
+
+
+r10 = raster(dens1)
+plot(r10)
+
+dens$v
+
+```
+
+
+
+```{r}
+
+plot4 = ggplot(cities, aes(lng, lat))+
+  geom_density_2d_filled(contour = TRUE) 
+  
+
+
+plot(st_intersection(plot4, nl_outline))
+
+```
+
+
+
+```{r}
+density_polygons <- ggplot_build(
+  ggplot(cities, aes(lng, lat)) +
+    stat_density_2d_filled(contour = TRUE)
+)$data[[1]]
+
+# Convert to sf POLYGON object
+density_sf <- st_as_sf(density_polygons, coords = c("x", "y"), crs = 4326) %>%
+  group_by(group, level) %>%
+  summarize(do_union = FALSE) %>%
+  st_cast("POLYGON")
+
+# Ensure CRS match
+nl_outline <- st_transform(nl_outline, 4326)
+
+# Intersect density polygons with NL boundary
+clipped_density <- st_intersection(density_sf, nl_outline)
+
+
+
+```
+
+```{r}
+
+
+ld.df = layer_data(plot4)
+plot(ld.df$x, ld.df$y)
+  
+  # separating the different polygons based on subgroup
+  ld.df$pol <- paste0(ld.df$subgroup, "_", ld.df$group)
+  ids <- unique(ld.df$pol)
+  
+  # Split contours based on the id
+  pols <- lapply(ids, function(x){
+    topol <- ld.df[ld.df$pol == x, ]
+    closepol <- rbind(topol, topol[1, ])
+    pol <- st_polygon(list(as.matrix(closepol[,c("x", "y")])))
+    df <- unique(topol[, grepl("level", names(topol))])
+    tofeatures <- st_as_sf(df, geometry=st_sfc(pol))
+    return(tofeatures)
+  })
+  
+  final_pols <- do.call(rbind, pols)
+  
+  # gets no overlapping, separate polygons
+  parts <- st_cast(st_union(final_pols),"POLYGON")
+  clust <- unlist(st_intersects(final_pols, parts))
+  
+  diss <- cbind(final_pols, clust) %>%
+    group_by(clust) %>%
+    summarize()
+  
+parts = st_set_crs(final_pols, 4326)
+nl_outline = st_transform(nl_outline, 4326)
+  
+
+ints = st_intersection(parts$geometry, nl_outline)
+
+colors = as.factor(parts$level)
+n_levels <- length(levels(colors))
+palette <- colorRampPalette(c("blue", "lightblue","yellow" , "red"))(n_levels)
+
+# Name the palette by factor levels
+names(palette) <- levels(colors)
+
+# Map each factor value to its color
+color_vector <- palette[as.character(colors)]
+
+plot(nl_outline, col = color_vector[1])
+plot(ints, col = color_vector, add = TRUE)
+
+
+
+
+ggplot() +
+  geom_sf(nl_outline, aes())+
+  geom_sf(ints, aes())
+
+```
+
+
+
+```{r}
+library(ggplot2)
+library(sf)
+
+# Create a new sf object that includes both geometry and level
+ints_sf <- st_sf(geometry = ints, level = parts$group)
+
+# Set up factor and color palette
+colors <- as.factor(ints_sf$level)
+n_levels <- length(levels(colors))
+palette <- colorRampPalette(c("blue", "lightblue", "yellow", "red"))(n_levels)
+names(palette) <- levels(colors)
+
+# Plot
+plot5 = ggplot() +
+  geom_sf(data = nl_outline, fill = palette[1], color = "black", size = 0.3) +
+  geom_sf(data = ints_sf, aes(fill = level), color = NA) +
+  scale_fill_manual(values = palette) +
+  labs(title = "Level-based Heatmap",
+       fill = "Level") +
+  theme(
+    panel.background = element_rect(fill = "transparent"),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    legend.background = element_rect(fill = "transparent"),
+    legend.box.background = element_rect(fill = "transparent"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+
+ggsave('plot5.png', plot5, bg='transparent')
+
+plot5
+```
+
+```{r}
+library(raster)
+# Convert sf points to sp for gstat
+points_sp <- as(cities, "Spatial")
+
+# Create a raster template over the extent
+raster_template <- raster(extent(outline), res = 100)  # change `res` as needed
+crs(raster_template) <- st_crs(points)$proj4string
+
+# Perform IDW interpolation
+idw_result <- idw(formula = value ~ 1, locations = points_sp, newdata = raster_template)
+
+# Convert to RasterLayer
+raster_map <- raster(idw_result)
+
+```
+
+
+```{r}
+library(terra)
+library("stars")
+
+template = rast(vect(ints_sf$geometry[5:7]),res=0.005)
+
+poly_raster <- rasterize(vect(ints_sf), template)
+
+plot(nl_outline, col = "red")
+plot(poly_raster,col="blue", add = TRUE)
+
+
+plot(template)
+
+stras = (st_rasterize(ints_sf))
+```
+
+```{r}
+
+template = rast(vect(ints_sf$geometry[1:10]),res=0.005)
+
+poly_raster <- rasterize(vect(ints_sf), template)
+
+plot(poly_raster)
+
+
+```
+
+YESSSSSSS
+```{r}
+cities_proj = st_as_sf(cities, coords = c("lng", "lat"), crs = 4326) %>% st_transform(nl.crs)
+
+nl_outline = st_transform(nl_outline, st_crs(cities_proj))
+
+ga_grid <- nl_outline %>% 
+  st_transform(crs = st_crs(cities_proj)) %>%  # Ensure same CRS
+  st_make_grid(n = c(50, 50)) %>%
+  st_sf()  # Convert grid to sf object
+
+
+
+grid_map = st_intersection(nl_outline, ga_grid)  %>% 
+  st_transform(crs = st_crs(cities_proj)) %>% 
+  st_as_sf() %>% 
+  mutate(grid_id = 1:n())
+
+campgrounds_per_grid_box <- grid_map %>% 
+  st_join(cities_proj) %>% 
+  group_by(grid_id) %>% 
+  summarize(total = sum(!is.na(id)))
+
+
+plot6 = ggplot(campgrounds_per_grid_box, aes(fill = total)) + 
+  geom_sf()+
+  scale_fill_gradientn(colours = c("darkblue","lightblue","green", "yellow", "red"))+
+  labs(title = "Level-based Heatmap",
+       fill = "Level") +
+  theme(
+    panel.background = element_rect(fill = "transparent"),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    legend.background = element_rect(fill = "transparent"),
+    legend.box.background = element_rect(fill = "transparent"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+
+ggsave('plot6.png', plot6, bg='transparent')
+
+
+```
+
+```{r}
+plot5
+
+
+```
+
+grid.arra
+
+
+
+
+
+
+
+
+

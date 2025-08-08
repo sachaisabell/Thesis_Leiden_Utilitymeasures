@@ -1,0 +1,192 @@
+---
+title: "map making"
+author: "Sacha van de Hoef"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Heatplot: in area
+```{r}
+provinces <- st_read("C:/Users/1glas/Downloads/gadm41_NLD_shp (1)/gadm41_NLD_2.shp")
+provinces$NAME_1[14] =  "Zuid-Holland"
+names_prov = provinces$NAME_1
+provinces1 = provinces %>% filter(NAME_1 %in% unique(names_prov)[c(1:6,8:13)])
+
+cities = readr:: read_csv("C:/Users/1glas/OneDrive/Bureaublad/Master Statistics and Datascience/Thesis/Programming/Thesis-SDC/worldcities.csv")
+cities = cities %>% filter(country == "Netherlands")
+colnames(cities)[colnames(cities) == "admin_name"] <- "NAME_1"
+
+nl.crs <- st_crs(28992)
+nl_outline <- st_union(provinces1) %>% st_transform(nl.crs)
+plot(nl_outline)
+
+plot4 = ggplot(cities, aes(lng, lat))+
+  ggdensity::geom_hdr(probs = seq(0.9,0.001,-0.1)) +
+  #geom_density_2d_filled() +
+  xlim(st_bbox(nl_outline)[c(1,3)]) + ylim(st_bbox(nl_outline)[c(2,4)])
+  
+
+ld.df = layer_data(plot4)
+plot(ld.df$x, ld.df$y)
+  
+# separating the different polygons based on subgroup
+ld.df$pol <- paste0(ld.df$subgroup, "_", ld.df$group)
+ids <- unique(ld.df$pol)
+
+
+  
+# Split contours based on the id
+pols <- lapply(ids, function(x){
+  topol <- ld.df[ld.df$pol == x, ]
+  closepol <- rbind(topol, topol[1, ])
+  pol <- st_polygon(list(as.matrix(closepol[,c("x", "y")])))
+  df <- unique(topol[, grepl("group", names(topol))])
+  tofeatures <- st_as_sf(df, geometry=st_sfc(pol))
+  return(tofeatures)
+})
+  
+final_pols <- do.call(rbind, pols)
+  
+# gets no overlapping, separate polygons
+parts <- st_cast(st_union(final_pols),"POLYGON")
+
+parts = st_set_crs(final_pols, 4326)
+nl_outline = st_transform(nl_outline, 4326)
+  sf_use_s2(FALSE)
+ints = st_intersection(parts$geometry, nl_outline)
+
+
+colors = as.factor(parts$group)
+n_levels <- length(levels(colors)) + 1
+palette <- colorRampPalette(c("blue", "lightblue","yellow" , "red"))(n_levels)
+
+# Name the palette by factor levels
+names(palette) <- c("base", levels(colors))
+
+# Map each factor value to its color
+color_vector <- palette[c("base",as.character(colors))]
+
+plot(nl_outline, col = color_vector[1], axes = TRUE)
+plot(ints, col = color_vector, add = TRUE)
+
+
+plot(final_pols)
+```
+
+### gridded version
+```{r}
+cities_proj = st_as_sf(cities, coords = c("lng", "lat"), crs = 4326) %>% st_transform(nl.crs)
+
+nl_outline = st_transform(nl_outline, st_crs(cities_proj))
+
+ga_grid <- nl_outline %>% 
+  st_transform(crs = st_crs(cities_proj)) %>%  # Ensure same CRS
+  st_make_grid(n = c(50, 50)) %>%
+  st_sf()  # Convert grid to sf object
+
+
+
+grid_map = st_intersection(nl_outline, ga_grid)  %>% 
+  st_transform(crs = st_crs(cities_proj)) %>% 
+  st_as_sf() %>% 
+  mutate(grid_id = 1:n())
+
+campgrounds_per_grid_box <- grid_map %>% 
+  st_join(cities_proj) %>% 
+  group_by(grid_id) %>% 
+  summarize(total = sum(!is.na(id)))
+
+
+plot6 = ggplot(campgrounds_per_grid_box, aes(fill = total)) + 
+  geom_sf()+
+  scale_fill_gradientn(colours = c("darkblue","lightblue","green", "yellow", "red"))+
+  labs(title = "Level-based Heatmap",
+       fill = "Level") +
+  theme(
+    panel.background = element_rect(fill = "transparent"),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    legend.background = element_rect(fill = "transparent"),
+    legend.box.background = element_rect(fill = "transparent"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+plot6
+```
+
+### sqaure: point / grid / heat
+now for square ones
+```{r}
+# generate some data
+set.seed(1)
+dat1 = data.frame(x = rnorm(10000),
+                  y = rnorm(10000))
+dat1$val = 1
+
+safe.grid = mask_grid(dat1[,1:2], r = 0.05)
+safe.random = mask_random(dat1[,1:2], r = 0.05)
+
+norm.p = ggplot(dat1, aes(x , y, colour = val)) +
+  geom_point() + 
+  coord_sf()
+
+norm.p
+```
+```{r}
+library(sdcSpatial)
+
+raster1 = sdc_raster(dat1[,1:2], variable = dat1[,3], r = 0.2)
+raster2 = sdc_raster(safe.grid, variable = dat1[,3], r = 0.2)
+raster3 = sdc_raster(safe.random, variable = dat1[,3], r = 0.2)
+
+
+par(mfrow = c(1,3))
+plot(raster1$value$sum, asp = 1)
+plot(raster2$value$sum, asp = 1)
+plot(raster3$value$sum, asp = 1)
+
+```
+now into heatmaps
+```{r}
+ggplot(dat1, aes(x, y)) +
+  ggdensity::geom_hdr(probs = seq(0.1,0.9,0.1)) +
+  coord_fixed()
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

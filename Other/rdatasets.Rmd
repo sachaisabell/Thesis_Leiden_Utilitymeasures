@@ -1,0 +1,119 @@
+---
+title: "r datasets"
+author: "Sacha van de Hoef"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+data(iris)
+
+par(mfrow = c(1,3))
+plot(iris$Sepal.Length, iris$Sepal.Width, asp = 1)
+plot(iris$Sepal.Length, iris$Petal.Length, asp = 1) # this one has two hotspots
+plot(iris$Sepal.Length, iris$Petal.Width, asp = 1)
+
+```
+
+```{r}
+data("USArrests")
+
+plot(USArrests$Murder * 10, USArrests$Assault, asp = 1) # elongated trend
+usaa = USArrests[,1:2]
+names(usaa) <- c("x","y")
+rr = sdcSpatial::sdc_raster(usaa, rep(1,nrow(USArrests)), 25)$value$sum
+
+plot(rr)
+```
+
+
+```{r}
+library(raster)
+library(ggplot2)
+
+ggplot() + geom_point(data = spData::afcon, aes(x,y))
+ggplot() + geom_sf(data = spData::cycle_hire)
+ggplot() + geom_point(data = spData::boston.c, aes(LON,LAT)) # looks a little bit normally distributed
+ggplot() + geom_point(data = spData::nydata, aes(X,Y)) # multiple hotspots
+ggplot() + geom_sf(data = spData::nz_height)
+ggplot() + geom_sf(data = spData::us_states)
+
+
+```
+
+```{r}
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
