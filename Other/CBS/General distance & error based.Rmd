@@ -1,0 +1,114 @@
+---
+title: "General distance & error based"
+output: pdf_document
+date: "2025-03-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# General
+```{r}
+library(sdcSpatial)
+```
+
+## Defining maps and plotting
+Here using the SDC technique smoothing.
+And assuming that any NA values amount to 0.
+```{r}
+# the maps
+map_original = sdc_raster(dwellings[,1:2], dwellings$consumption)
+map_safe = protect_smooth(map_original)
+
+# the plots
+mfrow = c(1,2)
+plot(map_original)
+plot(map_safe)
+
+# the data
+## turning raster into matrices
+dat_original = raster::as.matrix(map_original$value$mean); dat_original[is.na(dat_original)] = 0
+dat_safe = raster::as.matrix(map_safe$value$mean); dat_safe[is.na(dat_safe)] = 0
+```
+
+# Utility measures (Global)
+## MSE
+MSE is the mean squared error, computed between the original and the perturbed dataset.
+For each predefined grid, take the mean of the squared difference between the original and the safe map
+```{r}
+MSE = mean((dat_original - dat_safe)^2)
+MSE
+
+MSE_func = function(original, safe){
+  mean((original - safe)^2)
+}
+```
+
+## MAE
+```{r}
+MAE = mean(abs(dat_original - dat_safe))
+MAE
+```
+
+## SME
+Have to make a decision on what to do with zeros, could also omit and adjust the length(dat_original) to length(delta).
+Has an upper bound of 2 instead of one, could also omit the *2
+Not symmetric wrt too high or too low values, if original is 10 and safe is 5 then delta 5/15, but if safe is 15 then delta 5/25.
+```{r}
+delta = abs(dat_original - dat_safe)/(dat_original + dat_safe)
+delta[is.nan(delta)] = 0
+SME = 1/(length(dat_original)*2) * sum(delta)
+SME
+```
+
+## Hellinger Distance
+Between 0 and sqrt(N), where N is the sum of counts over the whole map.
+```{r}
+in.sqrt = sum((sqrt(dat_safe) - sqrt(dat_original))^2)
+HD = 1/sqrt(2) * sqrt(in.sqrt)
+HD
+# percent of maximum
+HD.max = sqrt(length(dat_safe))
+HD/HD.max
+```
+
+## RAD
+Again the problems with the zeros, but according to Young (2008) source, set to 0 if og is 0
+```{r}
+RAD.int = abs(dat_original - dat_safe)/dat_original
+RAD.int[is.nan(RAD.int)] = 0
+RAD = mean(RAD.int)
+RAD
+```
+
+## RMSE
+```{r}
+RMSE = sqrt(MSE)
+RMSE
+```
+
+# Utility measures (local)
+Error for each cell, plotted as maps using the function below
+```{r}
+local_error_map = function(data){
+  df_long = reshape2::melt(data)
+  
+  # Generate a blue color palette
+  blue_palette <- colorRampPalette(c("white", "blue", "darkblue"))
+  
+  # Normalize values to a range from 1 to the number of colors
+  num_colors <- 1000 # Adjust for more color granularity
+  col_breaks <- cut(df_long$value, breaks = num_colors, labels = FALSE)
+  
+  # Assign colors based on values
+  point_colors <- blue_palette(num_colors)[col_breaks]
+  
+  ## plotting the final map
+  plot(df_long$Var1, df_long$Var2, col = point_colors, pch = 19, asp = 1,
+  main = "Error per cell")
+}
+
+local_error_map(delta)
+
+```

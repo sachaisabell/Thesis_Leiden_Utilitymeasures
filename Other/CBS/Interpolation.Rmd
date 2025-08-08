@@ -1,0 +1,525 @@
+---
+title: "Interpolation"
+output: pdf_document
+date: "2025-04-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+## General Setup
+### Libraries/sources
+# retrieve basic functions for contours and center/scaling
+source("hotspot_functions.R")
+
+## libraries
+library(dplyr)
+library(ggplot2)
+library(lidaRtRee)
+library(sf)
+library(purrr)
+library(sdcSpatial)
+library(tigers)
+library(raster)
+library("spatstat.explore")
+
+```
+
+### Data
+Using the data 'dwellings' here, and using random reallocation as SDC method
+```{r}
+data_og = dwellings[,1:2]
+data_safe = mask_random(data_og, r = 100)
+
+plot(data_og)
+points(data_safe, col = "Red")
+```
+
+```{r}
+
+plot(dwellings[,1:2], col = dwellings$consumption)
+
+map_original = sdc_raster(dwellings[,1:2], dwellings$consumption)
+dat_original = raster::as.matrix(map_original$value$mean); dat_original[is.na(dat_original)] = 0
+
+plot(map_original$value$mean)
+```
+
+```{r}
+library(gstat)
+library(stars)
+library(terra)
+
+r <- raster(dwellings$consumption, xmn=min(), xmx=1, ymn=0, ymx=1, crs="", template=NULL)
+
+r = as.raster(map_original)
+#$value$mean)
+plot(r)
+
+?raster
+
+gs <- gstat(formula= consumption~1, locations=~x+y, data=dwellings)
+idw <- interpolate(map_original, gs, debug.level=0)
+idwr <- mask(idw, vr)
+plot(idwr, 1)
+
+
+rast1 = raster(dwellings[,1:2]) %>% rast(res = 10000)
+vr = rasterize(sample$consumption, rast1, "prec")
+
+dim(dat_original); 61*62
+
+plot(vr)
+plot(rast1)
+
+
+rastd
+```
+
+
+
+```{r}
+obs_window <-  raster(nrows = 61, ncol = 62, min(dwellings$x), max(dwellings$x), min(dwellings$y), max(dwellings$y))
+
+idw1 = interpolate(rast1, gs)
+idwr1 = mask(idw1, vr)
+
+plot(idwr1, 1)
+
+plot(idw1$var1.pred)
+
+
+dwellings
+```
+
+
+```{r}
+
+pred1 = predict(gs, rast1)
+?rast
+
+```
+
+
+https://stackoverflow.com/questions/51770743/how-can-i-predict-values-for-a-specific-point-using-the-idw-function-in-r
+```{r}
+
+sample = dwellings[,1:3]
+coordinates(sample) = ~x + y
+oo = gstat:: idw(formula = consumption ~1, locations = sample)#, newdata= rast1, idp = 3.0)
+
+plot(oo)
+
+
+x.range <- range(sample$x)
+y.range <- range(sample$y)
+
+x<-seq(x.range[1], x.range[2] * 1.5, length.out=200)
+y<-seq(y.range[1], y.range[2] * 1.5, length.out=200)
+grd<-expand.grid(x,y)
+
+coordinates(sample) = ~x+y
+coordinates(grd) <- ~ Var1+Var2
+gridded(grd) <- TRUE
+
+
+?idw
+
+
+lat <-  c(-23.49174, -23.49179, -23.49182, -23.49183, -23.49185, -23.49187)
+long <- c(152.0718, 152.0718, 152.0717, 152.0717, 152.0717, 152.0717)
+pH <- c(8.222411, 8.19931, 8.140428, 8.100752, 8.068141, 8.048852)
+
+sample <- data.frame(lat, long, pH)
+coordinates(sample) = ~long+lat
+proj4string(sample) <- CRS("+proj=longlat +datum=WGS84")
+
+loc <- data.frame(long = 152.07185, lat = -23.49184)
+coordinates(loc)  <- ~ long + lat
+proj4string(loc) <- CRS("+proj=longlat +datum=WGS84")
+
+oo <- idw(formula=pH ~ 1, locations = sample, newdata = sample, idp = 2.0)
+oo@data$var1.pred
+
+plot(oo@coords[,1:2], col = oo@data$var1.pred)
+
+plot(oo@data)
+```
+
+
+```{r}
+# Install and load necessary libraries
+install.packages(c("sp", "gstat", "raster"))
+library(sp)
+library(gstat)
+library(raster)
+
+# Example data (replace this with your actual data)
+data <- data.frame(
+  x = c(1, 2, 3, 4, 5),
+  y = c(1, 2, 3, 4, 5),
+  consumption = c(10, 20, 30, 40, 50)
+)
+
+plot(data[,1:2], col = data$consumption)
+
+# Convert to SpatialPointsDataFrame
+coordinates(data) <- ~x + y
+
+# Create IDW model
+idw_model <- gstat(formula = consumption ~ 1, data = data, set = list(idp = 2))
+
+# Create grid for interpolation
+grid <- expand.grid(x = seq(1, 5, by = 0.1), y = seq(1, 5, by = 0.1))
+coordinates(grid) <- ~x + y
+gridded(grid) <- TRUE
+
+# Perform IDW interpolation
+idw_result <- predict(idw_model, newdata = grid)
+
+# Visualize the result
+spplot(idw_result, "var1.pred")
+
+```
+```{r}
+# Install and load necessary libraries
+install.packages(c("sp", "gstat", "raster"))
+library(sp)
+library(gstat)
+library(raster)
+
+# Example data (replace this with your actual data)
+data <- dwellings[,1:3]
+
+plot(data[,1:2], col = data[,3], lwd = 1, pch = 20, asp  =1)
+
+# Convert to SpatialPointsDataFrame
+coordinates(data) <- ~x + y
+
+# Create IDW model
+idw_model <- gstat(formula = consumption ~ 1, data = data, set = list(idp = 2))
+
+# Create grid for interpolation
+grid <- expand.grid(x = seq(min(data$x), max(data$x), by = 1), y = seq(min(data$y), max(data$y), by = 1))
+coordinates(grid) <- ~x + y
+gridded(grid) <- TRUE
+
+# Perform IDW interpolation
+idw_result <- predict(idw_model, newdata = grid)
+
+# Visualize the result
+spplot(idw_result, "var1.pred")
+
+```
+
+
+```{r}
+x = c(rnorm(50), rnorm(50,3), rnorm(100,6))
+y = c(rnorm(50), rnorm(50,3), rnorm(100,6))
+z = c(rep(10, 50), rep(20,50), rep(30, 100))
+
+plot(x, y, col = z, pch = 20)
+
+
+data = data.frame(x,y,z)
+
+
+# Convert to SpatialPointsDataFrame
+coordinates(data) <- ~x + y
+
+# Create IDW model
+idw_model <- gstat(formula = z ~ 1, data = data, set = list(idp = 5))
+
+# Create grid for interpolation
+grid <- expand.grid(x = range(data$x), y = range(data$y))
+coordinates(grid) <- ~x + y
+gridded(grid) <- TRUE
+
+# Perform IDW interpolation
+idw_result <- predict(idw_model, newdata = grid)
+
+# Visualize the result
+spplot(idw_result, "var1.pred", axes = TRUE)
+```
+
+
+```{r}
+library("phylin")
+
+phylin::idw(dwellings[,3], dwellings[,1:2], )
+
+
+data(vipers)
+data(d.gen)
+data(grid)
+
+range(vipers[,1]);range(vipers[,2])
+range(grid$x);range(grid$y)
+
+# interpolate and plot the genetic distances for sample s2 in the d.gen
+int <- idw(d.gen[,2], vipers[,1:2], grid)
+
+grid.image(int, grid, main='IDW interpolation', xlab='Longitude', 
+           ylab='Latitude', sclab="Genetic distance to sample s2")
+
+points(vipers[,1:2], cex=d.gen[,2]*15+0.2)
+
+
+plot(vipers$x, vipers$y, asp = 1, col = (d.gen[,2])*500, pch = 20)
+
+length(vipers[,2])
+```
+
+
+```{r}
+data("dwellings")
+
+
+# interpolate and plot the genetic distances for sample s2 in the d.gen
+int <- phylin:: idw(dwellings[1:10,3], dwellings[1:10,1:2], grid)
+
+grid.image(int, grid, main='IDW interpolation', xlab='Longitude', 
+           ylab='Latitude', sclab="Genetic distance to sample s2")
+
+points(dwellings[,1:2], cex=dwellings[,3]*15+0.2)
+
+is(grid)
+
+```
+
+
+```{r}
+plot(spatstat.explore:: idw(finpines))
+idw(finpines, at="points")[1:5,]
+
+plot(idw(finpines, se=TRUE)$SE)
+idw(finpines, at="points", se=TRUE)$SE[1:5, ]
+
+finpines
+```
+
+
+```{r}
+safe.dwel = mask_random(dwellings, 1000)
+safe.dwel = mask_grid(dwellings, 1000)
+
+
+windwel = owin(xrange = range(dwellings$x), yrange = range(dwellings$y))
+win.safe = owin(xrange = range(safe.dwel$x), yrange = range(safe.dwel$y))
+
+
+dwel.ppp = ppp(x = dwellings$x, y = dwellings$y, window = windwel, marks = dwellings$consumption)
+safe.ppp = ppp(x = safe.dwel$x, y = safe.dwel$y, window = win.safe, marks = safe.dwel$consumption)
+
+
+idw.dwel = spatstat.explore::idw(dwel.ppp, at = "points")
+idw.safe = spatstat.explore::idw(safe.ppp, at = "points")
+plot(idw.dwel);plot(idw.safe)
+
+str(idw.dwel)
+
+
+differ.idw = abs(idw.dwel - dwellings$consumption)
+differ.safe = abs(idw.safe - safe.dwel$consumption)
+
+plot(dwellings[,1:2], col = differ.idw)
+
+ggplot()+
+  geom_point(aes(x = dwellings$x, y = dwellings$y, colour = differ.idw))
+
+ggplot()+
+  geom_point(aes(x = safe.dwel$x, y = safe.dwel$y, colour = differ.safe))
+
+
+sum(differ.idw[2325:2340]);mean(differ.safe)
+
+which(differ.idw == NaN)
+
+mean(differ.idw)
+
+sum(is.nan(unlist(differ.idw)))
+
+
+idw.dwel
+
+plot(dwellings[2330:2331,1:2])
+
+sqrt((155059 - 155067)^2 + (462909 - 462920)^2)
+
+(dist(dwellings[2325:2340,1:2]))
+
+### creates some NaN values because distances between points are 0
+
+distinct(dwellings, x, y, .keep_all = TRUE)
+```
+
+
+### IDW FINAL
+keep in mind that the grid are not exactly equal here, so either set the boundaries on the safe window to those of the original (and risk losing some points), or define boundary before applying the SDC method
+```{r}
+dwelling.uniq = distinct(dwellings, x, y, .keep_all = TRUE)
+
+safe.dwel = mask_random(dwelling.uniq, 1000) %>% distinct(x, y, .keep_all = TRUE)
+safe.dwel = mask_grid(dwelling.uniq, 1000) %>% distinct(x, y, .keep_all = TRUE)
+
+
+windwel = owin(xrange = range(dwelling.uniq$x), yrange = range(dwelling.uniq$y))
+win.safe = owin(xrange = range(safe.dwel$x), yrange = range(safe.dwel$y))
+
+
+dwel.ppp = ppp(x = dwelling.uniq$x, y = dwelling.uniq$y, window = windwel, marks = dwelling.uniq$consumption)
+safe.ppp = ppp(x = safe.dwel$x, y = safe.dwel$y, window = win.safe, marks = safe.dwel$consumption)
+
+
+idw.dwel = spatstat.explore::idw(dwel.ppp, at = "pixels")
+idw.safe = spatstat.explore::idw(safe.ppp, at = "pixels")
+plot(idw.dwel);plot(idw.safe)
+
+```
+
+### Kriging
+```{r}
+library(sp)
+
+# Convert to SpatialPointsDataFrame
+coordinates(dwelling.uniq) <- ~x + y
+
+# Create IDW model
+idw_model <- gstat(formula = z ~ 1, data = dwelling.uniq, set = list(idp = 5))
+
+# Create grid for interpolation
+grid <- expand.grid(x = range(dwelling.uniq$x), y = range(dwelling.uniq$y))
+gridded(grid) = ~x+y
+
+
+```
+
+example with muse
+https://rpubs.com/nabilabd/118172
+```{r}
+library(gstat)
+data(meuse)
+data(meuse.grid)
+
+meuse$dist
+
+coordinates(meuse) <- ~ x + y
+lzn.vgm <- variogram(log(zinc)~1, meuse) # calculates sample variogram values 
+lzn.fit <- fit.variogram(lzn.vgm, model=vgm(1, "Sph", 900, 1)) # fit model
+
+plot1 <- meuse %>% as.data.frame %>%
+  ggplot(aes(x, y)) + geom_point(size=1) + coord_equal() + 
+  ggtitle("Points with measurements")
+
+# this is clearly gridded over the region of interest
+plot2 <- meuse.grid %>% as.data.frame %>%
+  ggplot(aes(x, y)) + geom_point(size=1) + coord_equal() + 
+  ggtitle("Points at which to estimate")
+
+library(gridExtra)
+grid.arrange(plot1, plot2, ncol = 2)
+
+coordinates(meuse.grid) <- ~ x + y # step 3 above
+lzn.kriged <- krige(log(zinc) ~ 1, meuse, meuse.grid, model=lzn.fit)
+
+lzn.kriged %>% as.data.frame %>%
+  ggplot(aes(x=x, y=y)) + geom_tile(aes(fill=var1.pred)) + coord_equal() +
+  scale_fill_gradient(low = "yellow", high="red") +
+  scale_x_continuous() + scale_y_continuous() +
+  theme_bw()
+
+
+plot(lzn.kriged$var1.pred)
+
+plot(meuse.grid$x[1:10], meuse.grid$y[1:10], asp = 1)
+
+```
+
+now try this for the dwellings data
+```{r}
+
+coordinates(dwelling.uniq) <- ~ x + y
+lzn.vgm <- variogram((consumption)~1, dwelling.uniq[1:1000,]) # calculates sample variogram values 
+lzn.fit <- fit.variogram(lzn.vgm, model=vgm(1, "Sph", 900, 1)) # fit model
+
+plot1 <- dwelling.uniq[1:1000,] %>% as.data.frame %>%
+  ggplot(aes(x, y)) + geom_point(size=1) + coord_equal() + 
+  ggtitle("Points with measurements")
+
+grid.safe = expand.grid(seq(dwelling.uniq[1:1000,]@bbox[1,1], dwelling.uniq[1:1000,]@bbox[1,2], length.out = 100), seq(dwelling.uniq[1:1000,]@bbox[2,1], dwelling.uniq[1:1000,]@bbox[2,2], length.out = 100))
+
+
+# this is clearly gridded over the region of interest
+plot2 <- grid.safe %>% as.data.frame %>%
+  ggplot(aes(Var1, Var2)) + geom_point(size=1) + coord_equal() + 
+  ggtitle("Points at which to estimate")
+
+library(gridExtra)
+grid.arrange(plot1, plot2, ncol = 2)
+
+coordinates(grid.safe) <- ~ Var1 + Var2 # step 3 above
+lzn.kriged <- krige((consumption) ~ 1, dwelling.uniq[1:1000,], grid.safe, model=lzn.fit)
+
+lzn.kriged %>% as.data.frame %>%
+  ggplot(aes(x=Var1, y=Var2)) + geom_tile(aes(fill=var1.pred)) + coord_equal() +
+  scale_fill_gradient(low = "yellow", high="red") +
+  scale_x_continuous() + scale_y_continuous() +
+  theme_bw()
+
+
+plot(lzn.kriged$var1.pred)
+
+
+?krige
+```
+
+
+
+
+
+```{r}
+
+xx = c(rnorm(100, 1), rnorm(100, 5))
+yy = c(rnorm(100, 1), rnorm(100, 5))
+
+plot(xx, yy)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

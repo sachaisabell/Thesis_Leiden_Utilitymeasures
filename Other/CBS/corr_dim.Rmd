@@ -1,0 +1,218 @@
+---
+title: "corr_dim"
+output: pdf_document
+date: "2025-04-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+sc.og.hs = scale.center.poly(og.hs1$geometry)
+sc.sf.hs = scale.center.poly(sf.hs1$geometry)
+
+
+points.og1 = st_cast(sc.og.hs, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+points.sf1 = st_cast(sc.sf.hs, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+
+
+corr_integral = function(x, eps){
+  N = nrow(x)
+  
+  heavyside = sum((eps - dist(x)) > 0)
+  
+  (1/(N*(N-1))) * heavyside
+  
+}
+
+
+
+A = rbind(c(0,0), c(4,0), c(0,2))
+A = matrix(c(0,0,4,0,0,2), byrow = TRUE, ncol= 2)
+
+
+corr_integral(A,3)
+
+corr_integral(points.og1,3)
+
+```
+
+now we need to do two things:
+- sample from a polygon
+- make a plot
+
+```{r}
+A = matrix(c(0,0,4,0,0,2), byrow = TRUE, ncol= 2)
+
+
+
+epsis = seq(0,max(dist(points.og1)), 0.01)
+
+Ce = sapply(epsis, function(eps) corr_integral(points.og1,eps))
+
+
+plot( log(epsis),log(Ce))
+
+
+
+sampledpoly = st_sample(sc.og.hs, 300)
+
+plot(sc.og.hs)
+plot(sampledpoly, add = TRUE)
+
+
+sampled = st_cast(sampledpoly, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+epsis = seq(0,max(dist(sampled)), 0.01)
+
+Ce = sapply(epsis, function(eps) corr_integral(sampled,eps))
+
+
+plot( log(epsis),log(Ce))
+```
+
+
+
+### ellipse orrientation
+
+```{r}
+library("phonTools")
+
+sampledpoly = st_sample(sc.og.hs, 50)
+sampled = st_cast(sampledpoly, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+
+#plot(sc.og.hs)
+
+library("aspace")
+sde = calc_sde(points = sampled, id= 1)
+
+plot(sampled, axes = TRUE, ylim = c(-0.6,0.5), asp = 1)
+sdellipse(sampled, col = "red")
+points(sde$ATTRIBUTES$CENTRE.x,sde$ATTRIBUTES$CENTRE.y, col = "blue", pch = 20, lwd = 5)
+
+plot(sde$LOCATIONS$x, sde$LOCATIONS$y)
+
+anglepoint = which.max(sqrt((sde$LOCATIONS$x - sde$ATTRIBUTES$CENTRE.x)^2 +  (sde$LOCATIONS$y - sde$ATTRIBUTES$CENTRE.y)^2))
+anglepointloc = sde$LOCATIONS[anglepoint,]
+
+plot(sampled, axes = TRUE, ylim = c(-0.6,0.5), asp = 1)
+sdellipse(sampled, col = "red", stdev = 1.4)
+points(sde$ATTRIBUTES$CENTRE.x,sde$ATTRIBUTES$CENTRE.y, col = "blue", pch = 20, lwd = 5)
+points(anglepointloc[,2], anglepointloc[,3], lwd = 10, col = "green")
+points(sde$FORPLOTTING$coordsSDE[,1], sde$FORPLOTTING$coordsSDE[,2])
+plot(SDE$geometry, add = TRUE, col = "pink")
+
+#points(sde$LOCATIONS$x, sde$LOCATIONS$y)
+
+library("sfcentral")
+SDE = st_sd_ellipse(sampledpoly)
+plot(SDE$geometry)
+
+
+90 - atan2(0.3489453,0.1761437) * 180/pi
+
+atan((0.3489453/0.1761437)*tan(27.25357)) * 180/pi
+
+atan(0.3489453/0.1761437)* 180/pi
+```
+
+
+```{r}
+sampledpoly = st_sample(sc.og.hs, 30, type = 'random')
+sampled = st_cast(sampledpoly, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+sde = calc_sde(points = sampled, id= 1)
+anglepoint = which.max(sqrt((sde$LOCATIONS$x - sde$ATTRIBUTES$CENTRE.x)^2 +  (sde$LOCATIONS$y - sde$ATTRIBUTES$CENTRE.y)^2))
+anglepointloc = sde$LOCATIONS[anglepoint,]
+
+
+plot(sampled, axes = TRUE, ylim = c(-0.6,0.5), asp = 1)
+points(sde$ATTRIBUTES$CENTRE.x,sde$ATTRIBUTES$CENTRE.y, col = "blue", pch = 20, lwd = 5)
+points(anglepointloc[,2], anglepointloc[,3], lwd = 5, col = "green")
+lines(sde$FORPLOTTING$coordsSDE[,1], sde$FORPLOTTING$coordsSDE[,2], col = "red")
+
+angleSDE = atan(anglepointloc$y/anglepointloc$x)* 180/pi;angleSDE
+# angleSDE < 0 -> + 180
+```
+
+
+```{r}
+sd_ell_func = function(points) {
+  sampled = points
+  sde = calc_sde(points = sampled, id= 1)
+  anglepoint = which.max(sqrt((sde$LOCATIONS$x - sde$ATTRIBUTES$CENTRE.x)^2 +  (sde$LOCATIONS$y - sde$ATTRIBUTES$CENTRE.y)^2))
+  anglepointloc = sde$LOCATIONS[anglepoint,]
+  
+  plot(sampled, axes = TRUE, asp = 1)
+  points(sde$ATTRIBUTES$CENTRE.x,sde$ATTRIBUTES$CENTRE.y, col = "blue", pch = 20, lwd = 5)
+  points(anglepointloc[,2], anglepointloc[,3], lwd = 5, col = "green")
+  lines(sde$FORPLOTTING$coordsSDE[,1], sde$FORPLOTTING$coordsSDE[,2], col = "red")
+
+  angleSDE = atan(anglepointloc$y/anglepointloc$x)* 180/pi
+  
+  if(angleSDE < 0) return(angleSDE + 180)
+  return(angleSDE)
+}
+
+df.original <- base::data.frame(x = c(abs(rnorm(200)), abs(rnorm(200,4))), y = c(abs(rnorm(200)), abs(rnorm(200,4))))
+df.safe = mask_random(df.original, r = 0.5)
+
+sd_ell_func(df.original)
+
+
+```
+
+
+```{r}
+sampled = df.original
+sde = calc_sde(points = sampled, id= 1)
+anglepoint = which.max(sqrt((sde$LOCATIONS$x - sde$ATTRIBUTES$CENTRE.x)^2 +  (sde$LOCATIONS$y - sde$ATTRIBUTES$CENTRE.y)^2))
+anglepointloc = sde$LOCATIONS[anglepoint,]
+  
+plot(sampled, axes = TRUE, asp = 1)
+points(sde$ATTRIBUTES$CENTRE.x,sde$ATTRIBUTES$CENTRE.y, col = "blue", pch = 20, lwd = 5)
+points(anglepointloc[,2], anglepointloc[,3], lwd = 5, col = "green")
+lines(sde$FORPLOTTING$coordsSDE[,1], sde$FORPLOTTING$coordsSDE[,2], col = "red")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

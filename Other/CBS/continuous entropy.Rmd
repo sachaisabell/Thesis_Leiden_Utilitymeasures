@@ -1,0 +1,292 @@
+---
+title: "continuous entropy"
+output: pdf_document
+date: "2025-05-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+a = 40;b = 50
+nn <- 100
+p <- seq(0, 1, len = nn)
+p_mid <- (p[-1] + p[-nn])/2
+delta <- diff(p)[1]
+
+# for beta
+f_mid <- dbeta(p_mid, shape1=a, shape2=b)
+p_i <- f_mid * delta
+sum(p_i)
+
+(H_delta <- -sum(p_i * log(p_i)))
+H_delta + log(delta)
+
+# for norm
+f_mid <- dnorm(p_mid)
+
+norm1 = function(x){
+  dnorm(x) * dnorm(x, log = TRUE)
+}
+
+integrate(norm1, min(norms), max(norms))
+
+beta1 = function(x) dbeta(x, a,b) * dbeta(x, a, b, log=TRUE)
+integrate(beta1, min(vals), max(vals))
+
+######################
+
+vals = rbeta(1000000, 40, 50)
+plot(density(vals))
+
+dens.vals = density(vals)
+p_i = diff(dens.vals$x)[1] * dens.vals$y
+
+-sum(p_i * log(p_i)) + log(diff(dens.vals$x)[1])
+
+
+sum(p_i)
+
+
+#### CORRECTER 
+# https://xuk.ai/blog/estimate-entropy-wrong.html
+-sum(p_i * log(p_i / diff(dens.vals$x)[1]))
+
+
+# https://rpubs.com/SteadyStoffel/entropy1
+
+
+## for norm
+set.seed(1)
+norms = rnorm(10000)
+
+
+dens.vals = density(norms)
+p_i = diff(dens.vals$x)[1] * dens.vals$y
+
+-sum(p_i * log(p_i)) + log(diff(dens.vals$x)[1])
+
+
+sum(p_i)
+```
+
+
+
+
+
+```{r}
+
+
+
+unis = seq(0,2,0.001)
+plot(density(unis))
+
+
+uni2 = dunif(unis,0,2)
+plot(uni2)
+
+uni1= density(unis)
+uni1$y
+```
+
+
+
+comparison beta to uniform distribution (LDDP or smth)
+```{r}
+beta_vals = rbeta(1000000, 40, 50)
+beta_density = density(beta_vals, n = 1000)#, from = min(beta_vals), to = max(beta_vals))
+step_size = diff(beta_density$x)[1]
+p_i = step_size * beta_density$y
+
+-sum(p_i * log(p_i)) + log(diff(dens.vals$x)[1])
+plot(beta_density)
+
+?density
+
+log(3/Inf)
+
+# https://stats.stackexchange.com/questions/78711/how-to-find-estimate-probability-density-function-from-density-function-in-r
+```
+
+all approx the same LDDP answer, unif is build into this
+
+```{r}
+
+sum(p_i * log(length(beta_vals) / (p_i * diff(range(beta_vals)))))
+
+- sum(p_i * log((p_i * diff(range(beta_vals)))/ length(beta_vals) ))
+
+
+log(length(beta_vals)) - sum(p_i * log(p_i / (1/diff(range(beta_vals)))))
+
+
+dunif()
+```
+
+
+now need to truncate the density estimate, probs most accurate like this so adds up to one
+```{r}
+set.seed(1)
+beta_vals = rbeta(1000000, 40, 50)
+beta_density = density(beta_vals, n = 10000, from = min(beta_vals), to = max(beta_vals))
+#truncated = which(beta_density$x >= min(beta_vals) & beta_density$x <= max(beta_vals))
+
+step_size = diff(beta_density$x)[1]
+p_i = step_size * beta_density$y
+
+
+sum(p_i)
+```
+
+now FINAL installment of the continuous entropy
+```{r}
+
+LDDP_func = function(values, n = 10000){
+  
+  density_est = density(values, n = n, from = min(values), to = max(values))
+  step_size = diff(density_est$x)[1] # all the same
+  p_i = step_size * density_est$y
+  
+  - sum(p_i * log((p_i * diff(range(values)))/ length(values) ))
+  
+  
+}
+
+
+LDDP_func(beta_vals)
+
+```
+
+and of the other entropy option (that is not technically true)
+```{r}
+shannon_cont_entropy_func = function(values, n = 10000){
+  
+  density_est = density(values, n = n, from = min(values), to = max(values))
+  step_size = diff(density_est$x)[1] # all the same
+  p_i = step_size * density_est$y
+  
+  -sum(p_i * log(p_i / step_size))
+}
+
+shannon_cont_entropy_func(beta_vals)
+
+```
+
+```{r}
+
+
+LDDP_func = function(values, n = 10000){
+  
+  density_est = density(values, n = n, from = min(values), to = max(values))
+  step_size = diff(density_est$x)[1] # all the same
+  p_i = step_size * density_est$y
+  
+  - sum(p_i * log((p_i * diff(range(values)))/ length(values) ))
+  
+  
+}
+
+
+shannon_cont_entropy_func = function(values, n = 10000){
+  
+  density_est = density(values, n = n, from = min(values), to = max(values))
+  step_size = diff(density_est$x)[1] # all the same
+  p_i = step_size * density_est$y
+  
+  -sum(p_i * log(p_i / step_size))
+}
+
+
+
+
+# note that safe and original are just vectors of values here
+continuous_entropy_func = function(safe, original, type = c("LDDP", "shannon"), n = 10000){
+  
+  if(type == "LDDP"){
+    safe.entropy = LDDP_func(safe, n)
+    original.entropy = LDDP_func(original, n)
+  }
+  
+  if(type == "shannon"){
+    safe.entropy = shannon_cont_entropy_func(safe, n)
+    original.entropy = shannon_cont_entropy_func(original, n)
+  }
+  
+  return(abs(safe.entropy - original.entropy) / (safe.entropy + original.entropy))
+  
+}
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

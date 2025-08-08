@@ -1,0 +1,491 @@
+---
+title: "hotspot contour"
+output: pdf_document
+date: "2025-03-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Point data
+https://gis.stackexchange.com/questions/444689/create-density-polygons-from-spatial-points-in-r
+https://search.r-project.org/CRAN/refmans/lidaRtRee/html/pointList2poly.html
+```{r}
+library(ggplot2)
+library("lidaRtRee")
+library(sf)
+
+# Data
+set.seed(1)
+df <- data.frame(x = c(abs(rnorm(200)), abs(rnorm(200,4))), y = c(abs(rnorm(200)), abs(rnorm(200,4))))
+
+# create a plot using filled argument
+point.plot = ggplot(df, aes(x = x, y = y)) +
+  stat_density2d_filled(contour = TRUE)
+  #geom_density2d_filled(bins = 17) +
+  #geom_point() + 
+  #geom_density_2d(bins = 17)
+
+point.plot
+
+# take the first layer
+data2d = layer_data(point.plot, i = 1)
+
+# plot the points that form the contours
+##plot(data2d$x, data2d$y)
+
+# have contours per (sub)group these form the id
+data2d$pol <- paste0(data2d$group, "_", data2d$subgroup)
+ids <- unique(data2d$pol)
+
+# Split contours based on the id
+pols <- lapply(ids, function(x){
+  topol <- data2d[which(data2d$pol == x), c("x","y")]
+  closepol <- as.matrix(rbind(topol, topol[1, ]))
+  
+  return((closepol))
+   
+})
+
+plot(pols[[1]])
+#data2d[data2d$level_low == 0,]
+
+
+# convert to polygons and plot
+cont2 = pointList2poly(pols)
+plot(cont2[2], axes = TRUE) # only the contours
+plot(cont2, axes = TRUE) # with colors
+
+# plot separate polygons
+cont1.2 = pointList2poly(pols[5]) # bounding box + first polygon
+plot(cont1.2, axes = TRUE)
+
+# calculating the area of the polygons, means we have to sum them up if they touch the borders
+cont1.2 = pointList2poly(pols[11]) # bounding box + first polygon
+plot(cont1.2, axes = TRUE)
+
+df12 = cont1.2
+df12 = st_as_sf(df12)
+st_area(df12)
+```
+several problems
+- if hotspot touches the border it does not draw a full polygon but multiple pieces
+- and they polygon is not fully filled
+```{r}
+# so we need to somehow cut the list of points if it forms a full circle, but this does not work since what if there are multiple hotspots that touch borders
+
+# using the code below works well, but we get an abrupt ending because the border does not exist, we need to make sure that a darker continues along the border until it finds a lighter color (and the other way around)
+
+x = rnorm(n = 500, mean = 0.5, sd = 0.3)
+y = rnorm(n = 500, mean = 6, sd = 1)
+data1 = merge(x, y, by = "row.names", all = TRUE)
+
+point.plot = ggplot(df,aes(x, y))+
+  stat_density_2d(geom = "polygon", contour = TRUE,
+                  aes(fill = after_stat(level)), colour = "black",
+                  bins = 15) +
+  scale_fill_distiller(palette = "Blues", direction = 1) +theme_classic()
+
+point.plot
+
+```
+
+
+```{r}
+data2d = layer_data(point.plot, i = 1)
+
+# plot the points that form the contours
+##plot(data2d$x, data2d$y)
+
+# have contours per (sub)group these form the id
+data2d$pol <- paste0(data2d$group, "_", data2d$subgroup)
+ids <- unique(data2d$pol)
+
+# Split contours based on the id
+pols <- lapply(ids, function(x){
+  topol <- data2d[which(data2d$pol == x), c("x","y")]
+  closepol <- as.matrix(rbind(topol, topol[1, ]))
+  
+  return((closepol))
+   
+})
+
+# convert to polygons and plot
+cont2 = pointList2poly(pols)
+plot(cont2[2], axes = TRUE) # only the contours
+plot(cont2, axes = TRUE) # with colors
+
+# plot separate polygons
+cont1.2 = pointList2poly(pols[16]) # bounding box + first polygon
+plot(cont1.2, axes = TRUE)
+
+
+pols[1] # needs  to connect to connect to the points where
+
+sum(data2d$order != data2d$level)
+```
+
+```{r}
+library(tidyverse)
+
+#### now rewrite for our data
+df <- data.frame(x = c(abs(rnorm(200)), abs(rnorm(200,4))), y = c(abs(rnorm(200)), abs(rnorm(200,4))))
+
+df <- filter_all(df, ~!is.na(.))
+
+h <- c(MASS::bandwidth.nrd(df$x), MASS::bandwidth.nrd(df$y))
+
+dens <- MASS::kde2d(
+  df$x, df$y, h = h, n = 100
+  ,lims = c(range(df$x), range(df$y))
+)
+df <- expand.grid(x = dens$x, y = dens$y)
+df$z <- as.vector(dens$z)
+
+point.plot = ggplot(df, aes(x, y, z = z, fill = after_stat(level))) +
+  geom_contour_filled() +
+  scale_fill_viridis_d()
+point.plot
+
+
+```
+
+
+
+
+
+
+## Raster data
+```{r}
+# the maps
+map_original = sdc_raster(dwellings[,1:2], dwellings$consumption)
+map_safe = protect_smooth(map_original)
+
+# the plots
+mfrow = c(1,2)
+plot(map_original)
+plot(map_safe)
+
+# the data
+## turning raster into matrices
+dat_original = raster::as.matrix(map_original$value$mean); dat_original[is.na(dat_original)] = 0
+dat_safe = raster::as.matrix(map_safe$value$mean); dat_safe[is.na(dat_safe)] = 0
+```
+1. make a certain choice on the bins/groups of values 
+2. define the contours of these bins
+3. convert contours into polygons
+
+https://stackoverflow.com/questions/28859181/how-to-get-contour-lines-around-the-grids-in-r-raster
+```{r}
+library(raster)
+library(rgeos)  ## For dissolve = TRUE in rasterToPolygons()
+
+# note that this is queen's case, could also change to rook by setting directions = 4 (instead 8 default)
+# can make custom bins here, not in the clump function itself though
+clumps = raster::clump(map_original$value$mean > 10000)
+SP <- rasterToPolygons(clumps, dissolve = TRUE)
+plot(map_original, sensitive = FALSE)
+plot(SP, add = TRUE)
+
+freq(clumps) # so from the mean > x creates a certain amount of clumps (values column), and they span a certain amount of grid cells (count column, also the area)
+
+## no see if we can select a single polygon since we need the location of each of these
+# SP is a spatialpoinsdataframe, so trying to subset this one
+SP$clumps[[1]]
+
+```
+
+
+what to solve:
+- how to do multiple different clumps at the same time
+- how to get the area of the specific clumps
+area should be pretty simple since it is just the number of areas in there (so we can use the freq on a clump object)
+
+```{r}
+frequency(clump)
+
+r <- raster(ncols=10, nrows=10)
+r[] <- round(runif(ncell(r))*0.6 )
+rc <- clump(r, directions = 8) 
+freq(rc)
+plot(rc)
+
+
+```
+
+different approach using the MASS package
+```{r}
+library(MASS)
+cl = contourLines(1:dim(dat_original)[1], 1:dim(dat_original)[2], dat_original, levels = seq(0,10000,1000))
+
+plot(map_original, sensitive = FALSE)
+lapply(cl, function(x) lines(x, col = "green", lwd = 500))
+
+plot(cl[[1]]$x, cl[[1]]$y)
+lapply(cl, function(x) lines(x, col = "green", lwd = 50))
+
+lines(cl[[1]]$x, cl[[1]]$y, col = 'green')
+```
+https://stackoverflow.com/questions/14379828/how-does-one-turn-contour-lines-into-filled-contours
+```{r}
+# nice, this cuts the polygons (although pretty sure in a rook fashion)
+rc = cut(map_original$value$mean, breaks = 5)
+pols = rasterToPolygons(rc, dissolve = TRUE) # dissolve makes the lines between cells with the same color dissapear
+spplot(pols, axes = TRUE)
+```
+now need to retrieve the polygons and store them
+```{r}
+
+plot.pol = function(x){
+  plot(subset(pols, pols$layer == x), col = x, axes = TRUE, add = TRUE)
+}
+
+pol1 = subset(pols, pols$layer == 1)
+plot(pol1, col = "lightgrey")
+sapply(2:10, function(x) plot.pol(x))
+
+
+
+library(sf)
+
+df = pol2
+df = st_as_sf(df)
+st_area(df)
+
+
+```
+
+
+
+
+
+
+```{r}
+library(purrr)
+polygon <- list(matrix(c(1, 1, 2, 1, 2, 2, 1, 2, 1, 1),ncol=2, byrow=T)) 
+polygon <- sf::st_polygon(polygon) # Create an sf polygon
+
+# Sample 50 random points within the polygon 
+set.seed(1234)
+
+points <- st_sample(polygon, size=50) 
+st_crs(points) <- "+proj=longlat +ellps=WGS84 +datum=WGS84" #change to lon/lat
+
+points_sf <- points
+
+
+points <- as.data.frame(points) #convert to dataframe
+points$lon <- unlist(map(points$geometry,1)) #adding lon column
+points$lat <- unlist(map(points$geometry,2)) #adding lat column
+
+
+#Plot using geom_density_2d_filled()
+p <- ggplot(points, aes(x = lon, y = lat)) +
+  # This would create filled polygons that we use for create our polygon
+  geom_density2d_filled() +
+  geom_point() +
+  geom_density_2d()
+
+p
+
+# Id of polygon
+data2d$pol <- paste0(data2d$group, "_", data2d$subgroup)
+ids <- unique(data2d$pol)
+
+# Split and create polygons based on the id
+pols <- lapply(ids, function(x){
+  topol <- data2d[data2d$pol == x, ]
+  
+  closepol <- rbind(topol, topol[1, ])
+
+  pol <- st_polygon(list(as.matrix(closepol[,c("x", "y")])))
+  
+  # Add features
+  df <- unique(topol[, grepl("level", names(topol))])
+  
+  tofeatures <- st_as_sf(df, geometry=st_sfc(pol))
+
+  return(tofeatures)  
+})
+
+final_pols <- do.call(rbind, pols)
+
+# And force a crs, since we lost that on the process
+st_crs(final_pols) <- st_crs(points_sf)
+
+
+plot(final_pols, axes = TRUE)
+
+
+```
+
+
+## now trying with just one prefined layer
+### does not work with the stat_density_2d_filled
+```{r}
+set.seed(1)
+df <- data.frame(x = c(abs(rnorm(200)), abs(rnorm(200,4))), y = c(abs(rnorm(200)), abs(rnorm(200,4))))
+
+# create a plot using filled argument
+point.plot = ggplot(df, aes(x = x, y = y)) +
+  stat_density_2d_filled(contour = TRUE,
+                         breaks = c(0,0.01,0.02))
+  #geom_density2d_filled(bins = 17) +
+  #geom_point() + 
+  #geom_density_2d(bins = 17)
+
+point.plot
+
+data2d = layer_data(point.plot, i = 1)
+
+# plot the points that form the contours
+##plot(data2d$x, data2d$y)
+
+# have contours per (sub)group these form the id
+data2d$pol <- paste0(data2d$group, "_", data2d$subgroup)
+ids <- unique(data2d$pol)
+
+# Split contours based on the id
+pols <- lapply(ids, function(x){
+  topol <- data2d[which(data2d$pol == x), c("x","y")]
+  closepol <- as.matrix(rbind(topol, topol[1, ]))
+  
+  return((closepol))
+   
+})
+
+plot(pols[[1]])
+#data2d[data2d$level_low == 0,]
+
+
+# convert to polygons and plot
+cont2 = pointList2poly(pols)
+plot(cont2[2], axes = TRUE) # only the contours
+plot(cont2, axes = TRUE) # with colors
+```
+
+```{r}
+set.seed(1)
+df <- data.frame(x = c(abs(rnorm(200)), abs(rnorm(200,4))), y = c(abs(rnorm(200)), abs(rnorm(200,4))))
+
+# create a plot using filled argument
+point.plot = ggplot(df, aes(x = x, y = y)) +
+  geom_density_2d_filled(contour = TRUE,breaks = c(0.05555, 1))
+  #geom_density2d_filled(bins = 17) +
+  #geom_point() + 
+  #geom_density_2d(bins = 17)
+
+point.plot
+
+
+# extracting information from the plot
+ld.df = layer_data(point.plot)
+
+# selecting a certain contour as the definition of a hotspots (can also be defined with the d2d function with "breaks" argument)
+#ld.df = ld.df[ld.df$level == "(0.03, 0.04]",] 
+
+# separating the different polygons based on subgroup
+ld.df$pol <- paste0(ld.df$subgroup, "_", ld.df$group)
+ids <- unique(ld.df$pol)
+
+range(ld.df$level)
+
+# Split contours based on the id
+pols <- lapply(ids, function(x){
+  topol <- ld.df[ld.df$pol == x, ]
+  closepol <- rbind(topol, topol[1, ])
+  pol <- st_polygon(list(as.matrix(closepol[,c("x", "y")])))
+  df <- unique(topol[, grepl("level", names(topol))])
+  tofeatures <- st_as_sf(df, geometry=st_sfc(pol))
+  return(tofeatures)
+})
+
+
+final_pols <- do.call(rbind, pols)
+
+# now something else
+parts <- st_cast(st_union(final_pols),"POLYGON")
+plot(parts) # gets no overlapping, separate polygons, yay!
+
+clust <- unlist(st_intersects(final_pols, parts))
+
+diss <- cbind(final_pols, clust) %>%
+  group_by(clust) %>%
+  summarize(box = paste(nlevel, collapse = ", "))
+
+plot(diss[,1], axes = TRUE)
+```
+
+WORKSSS!!!
+
+### now turn it into a function
+```{r}
+bounded_hotspots = function(df, minimum){
+  # create a plot using filled argument
+  point.plot = ggplot(df, aes(x = x, y = y)) +
+    geom_density_2d_filled(contour = TRUE, breaks = c(minimum, 1))
+  
+  # extracting information from the plot
+  ld.df = layer_data(point.plot)
+  
+  # separating the different polygons based on subgroup
+  ld.df$pol <- paste0(ld.df$subgroup, "_", ld.df$group)
+  ids <- unique(ld.df$pol)
+  
+  # Split contours based on the id
+  pols <- lapply(ids, function(x){
+    topol <- ld.df[ld.df$pol == x, ]
+    closepol <- rbind(topol, topol[1, ])
+    pol <- st_polygon(list(as.matrix(closepol[,c("x", "y")])))
+    df <- unique(topol[, grepl("level", names(topol))])
+    tofeatures <- st_as_sf(df, geometry=st_sfc(pol))
+    return(tofeatures)
+  })
+  
+  final_pols <- do.call(rbind, pols)
+  
+  # gets no overlapping, separate polygons
+  parts <- st_cast(st_union(final_pols),"POLYGON")
+  clust <- unlist(st_intersects(final_pols, parts))
+  
+  diss <- cbind(final_pols, clust) %>%
+    group_by(clust) %>%
+    summarize()
+
+  return(diss)
+}
+
+set.seed(1)
+df <- data.frame(x = c(abs(rnorm(200)), abs(rnorm(200,4))), y = c(abs(rnorm(200)), abs(rnorm(200,4))))
+
+bh = bounded_hotspots(df, 0.05)
+plot(bh, axes = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

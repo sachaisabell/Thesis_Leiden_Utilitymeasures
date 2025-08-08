@@ -1,0 +1,178 @@
+---
+title: "Neighbour based"
+output: pdf_document
+date: "2025-03-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## General
+```{r}
+library(sdcSpatial)
+library("spatstat.geom")
+
+```
+
+
+## Average nearest neighbour
+Works pretty much everytime, even if the number of points changes
+```{r}
+
+small_points <- cbind(
+  x = c(2.5, 3.5, 7.2, 1.5),
+  y = c(6.2, 3.8, 4.4, 2.1))
+
+
+### Method 1: mask grid
+# note that r has to be set beforehand, grid resolution
+grid_mask = mask_grid(small_points, r = 1, plot = TRUE)
+
+ANN.safe = mean(nndist(grid_mask[,1], grid_mask[,2], k = 1))
+ANN.og = mean(nndist(small_points[,1], small_points[,2], k = 1))
+
+ANN.og;ANN.safe
+
+ANN_func = function(original, safe){
+  
+  ANN.safe = mean(nndist(safe[,1], safe[,2], k = 1))
+  ANN.og = mean(nndist(original[,1], original[,2], k = 1))
+
+  return(c(ANN.og;ANN.safe))
+}
+
+```
+
+## Distance to k-nearest neighbours
+Work if the number of points stays the same, but not otherwise
+```{r}
+# using data and grid mask from ANN
+
+kn.safe = colMeans(nndist(grid_mask[,1], grid_mask[,2], k = 1:(nrow(grid_mask) - 1)))
+kn.og = colMeans(nndist(small_points[,1], small_points[,2], k = 1:(nrow(small_points) - 1)))
+
+kn.safe;kn.og
+
+plot(cbind(kn.safe, kn.og), col = 1:2, type = "b")
+abline(a = 0, b= 1, col = "red")
+
+plot(kn.safe ~ eval(1:3), type = "b", col = "red"); lines(kn.og, type = "b")
+
+
+
+dist_knn_func(small_points, grid_mask)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

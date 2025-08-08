@@ -1,0 +1,263 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-05-01"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+library(spdep)
+library(ape)
+
+
+province_nn = poly2nb(provinces_data$geometry[-c(20,29,32,34,228)])
+
+nbmat = nb2mat(province_nn, style = "C", zero.policy = TRUE)
+nbl = nb2listw(province_nn, style = "C", zero.policy = TRUE)
+
+
+sp1 = spdep::moran.test(x.og, mat2listw(w1))
+sp2 = spdep::moran.test(provinces_data$city_count[-c(20,29,32,34,228)], nbl)
+
+gl1 = gl_moran(x.og, w1)
+gl2 = gl_moran(provinces_data$city_count[-c(20,29,32,34,228)], nbmat)
+
+ape1 = Moran.I(x.og, w1)
+ape2 = Moran.I(provinces_data$city_count[-c(20,29,32,34,228)], nbmat, scaled = TRUE)
+
+
+sp2$estimate;gl2;ape2$observed
+
+```
+
+
+```{r}
+
+nbmat = nb2mat(province_nn, style = "W", zero.policy = FALSE)
+nbl = nb2listw(province_nn, style = "W", zero.policy = FALSE)
+
+
+sp1 = spdep::moran.test(x.og, mat2listw(w1))
+sp2 = spdep::moran.test(provinces_data$city_count[-c(20,29,32,34,228)], nbl)
+
+gl1 = gl_moran(x.og, w1)
+gl2 = gl_moran(provinces_data$city_count[-c(20,29,32,34,228)], nbmat)
+
+ape1 = Moran.I(x.og, w1)
+ape2 = Moran.I(provinces_data$city_count[-c(20,29,32,34,228)], nbmat, scaled = TRUE)
+
+
+sp2$estimate;gl2;ape2$observed
+
+
+
+```
+
+
+```{r}
+
+sp1$estimate;gl1;ape1$observed
+
+# same answer!
+spl1 = localmoran(provinces_data$city_count[-c(20,29,32,34,228)], nbl)
+l1 = local_MI_function(provinces_data$city_count[-c(20,29,32,34,228)], nbmat)
+
+
+spl2 = localmoran(x.og, mat2listw(w1))
+l2 = local_MI_function(x.og, w1)
+
+spl1;spl2
+
+
+spl1[,1]
+```
+https://scholarcommons.sc.edu/cgi/viewcontent.cgi?article=7428&context=etd
+
+```{r}
+
+lm_func = function(input, mat){
+  
+  n = length(input)
+  y.bar = mean(input)
+  locals = c()
+  
+  for (i in 1:nrow(mat)) {
+    
+    nom = n * (input[i] - y.bar)
+    denom = sum((input - y.bar)^2)
+    tail = sum(mat[i,] * (input - y.bar))
+    
+    locals[i] = tail * nom / denom
+  }
+  
+  return(locals)
+  
+}
+
+lm_func(x.og, w1)
+
+lm_func(provinces_data$city_count[-c(20,29,32,34,228)], nbmat)
+
+
+
+
+
+
+
+
+```
+
+
+Lets create function to create the weighting matrix
+```{r}
+library(dplyr)
+library(spdep)
+
+
+weight.matrix = function(input, style = c("B", "C", "W"), output = c("matrix","list"), map = c("grid", "area")){
+    
+  # first get the neighbors
+    if(map == "grid"){
+      input = input$value$mean
+      input = raster::as.matrix(input); input[is.na(input)] = 0
+      input.weights = spdep::cell2nb(nrow(input),ncol(input)) 
+      
+    } 
+    else if(map == "area"){
+      input = input$geometry
+      input.weights = spdep::poly2nb(input) 
+    } 
+    
+    # then actually calculate the correct weights matrix
+    if(output == "matrix"){
+      weight.matrix = nb2mat(input.weights, style = style, zero.policy = TRUE)
+    }
+    else if(output == "list"){
+      weight.matrix = nb2listw(input.weights, style = style, zero.policy = TRUE)
+    }
+    
+
+    return(weight.matrix)
+}
+
+
+
+
+mat1 = weight.matrix(map_original, "B", "matrix", "grid")
+
+mat1[1:5,1:5]
+
+
+mat2 = weight.matrix(provinces_data[-c(20,29,32,34,228),], "C","matrix",
+                      "area")
+
+dim(mat2)
+nrow(provinces_data)
+
+lm_func(provinces_data$city_count[-c(20,29,32,34,228)], mat2)
+
+mean(nbmat == mat2)
+
+```
+
+
+
+```{r}
+local_MI_func = function(original, safe, style = c("W","C","B"), type = c("grid", "area")){
+  
+  if(type == "grid"){
+    
+    original.weights = weight.matrix(original, style = style, map = type, output = "list")
+    safe.weights = weight.matrix(safe, style = style, map = type, output = "list")
+    
+    MI.original = spdep::localmoran(c(original), original.weights)
+    MI.safe = spdep::localmoran(c(safe), safe.weights)
+  }
+  
+  if(type == "area"){
+
+    original.weights = weight.matrix(original, style = style, map = type, output = "list")
+    safe.weights = weight.matrix(safe, style = style, map = type, output = "list")
+    
+    print(as.vector(original$values))
+    
+    MI.original = spdep::localmoran(original$values, original.weights)
+    MI.safe = spdep::localmoran(safe$values, safe.weights)
+  }
+  
+  
+  
+  return(c(MI.original, MI.safe))  
+}
+
+out1 = local_MI_func(provinces_data[-c(20,29,32,34,228),],provinces_data[-c(20,29,32,34,228),],"C","area")
+out1[1:350] == l1
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

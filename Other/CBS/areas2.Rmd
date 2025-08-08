@@ -1,0 +1,617 @@
+---
+title: "Untitled"
+author: "Sacha van de Hoef"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(readr)
+
+# Load shapefile of provinces
+provinces <- st_read("F:/Desktop/R files/gadm41_NLD_shp/gadm41_NLD_1.shp")
+provinces$NAME_1[14] =  "Zuid-Holland"
+names_prov = provinces$NAME_1
+
+provinces1 = provinces %>% filter(NAME_1 %in% names_prov[c(1:5,7:12,14)])
+
+
+
+# Load city data (example: data frame with a province column)
+cities = read_csv("F:/Desktop/R files/worldcities.csv")
+cities = cities %>% filter(country == "Netherlands")
+colnames(cities)[colnames(cities) == "admin_name"] <- "NAME_1"
+
+city_counts <- cities %>%
+  group_by(NAME_1) %>%
+  summarise(city_count = n())
+
+provinces_data <- provinces1 %>%
+  left_join(city_counts, by = c("NAME_1" = "NAME_1"))  # Replace with actual column names
+
+#provinces_data$city_count
+
+ggplot(provinces_data) +
+  geom_sf(aes(fill = city_count)) +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Number of Cities per Province",
+       fill = "City Count")
+
+```
+
+```{r}
+
+cities_safe = mask_random(cities[,c("lng","lat")], 1.5)
+cities2  = cities
+cities2$lng = cities_safe$lng
+cities2$lat = cities_safe$lat
+
+city_counts <- cities2 %>%
+  group_by(NAME_1) %>%
+  summarise(city_count = n())
+
+provinces_data <- provinces1 %>%
+  left_join(city_counts, by = c("NAME_1" = "NAME_1"))  # Replace with actual column names
+
+provinces_data$city_count
+
+ggplot(provinces_data) +
+  geom_sf(aes(fill = city_count)) +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Number of Cities per Province",
+       fill = "City Count")
+
+```
+
+```{r}
+
+cities_sf <- st_as_sf(cities2, coords = c("lng", "lat"), crs = 4326)  # WGS84
+
+# This adds province attributes to each city based on location
+cities_with_province <- st_join(cities_sf, provinces, join = st_within)
+
+city_counts <- cities_with_province %>%
+  st_drop_geometry() %>%  # drop spatial geometry for grouping
+  group_by(NAME_1.y) %>%
+  summarise(city_count = n())
+
+provinces_data <- provinces %>%
+  left_join(city_counts, by = c("NAME_1" = "NAME_1.y"))
+
+
+ggplot() +
+  geom_sf(data = provinces_data, aes(fill = city_count)) +
+  geom_sf(data = cities_sf, color = "black", size = 1, shape = 21, fill = "white") +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Number of Cities per Province with City Locations",
+       fill = "City Count")
+
+
+
+```
+
+now per municipality
+```{r}
+provinces <- st_read("F:/Desktop/R files/gadm41_NLD_shp/gadm41_NLD_2.shp")
+
+cities_sf <- st_as_sf(cities, coords = c("lng", "lat"), crs = 4326)  # WGS84
+
+# This adds province attributes to each city based on location
+cities_with_province <- st_join(cities_sf, provinces, join = st_within)
+
+city_counts <- cities_with_province %>%
+  st_drop_geometry() %>%  # drop spatial geometry for grouping
+  group_by(NAME_2) %>%
+  summarise(city_count = n())
+
+provinces_data <- provinces %>%
+  left_join(city_counts, by = c("NAME_2" = "NAME_2"))
+
+provinces_data$city_count[is.na(provinces_data$city_count)] = 0
+
+
+
+ggplot() +
+  geom_sf(data = provinces_data, aes(fill = city_count)) +
+  geom_sf(data = cities_sf, color = "black", size = 1, shape = 21, fill = "white") +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Number of Cities per Province with City Locations",
+       fill = "City Count")
+
+
+st_join(st_intersection(cities_sf, provinces))
+
+```
+
+
+
+
+
+```{r}
+# getting areas
+st_area(provinces_data$geometry)
+
+# getting centroids
+centroids = st_centroid(provinces_data$geometry)
+
+ggplot() +
+  geom_sf(data = provinces_data, aes(fill = city_count)) +
+  geom_sf(data = centroids, color = "black", size = 1, shape = 21, fill = "white") +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Number of Cities per Province with City Locations",
+       fill = "City Count")
+
+
+```
+
+```{r}
+nnp = st_nearest_points(centroids, centroids)
+
+ggplot() +
+  geom_sf(data = provinces_data, aes(fill = city_count)) +
+  #geom_sf(data = st_nearest_points(centroids, centroids), color = "black", size = 1, shape = 21, fill = "white") +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Number of Cities per Province with City Locations",
+       fill = "City Count")
+
+library(spdep)
+
+province_nn = poly2nb(provinces_data$geometry[-c(20,29,32,34,228)])
+nb_B <- nb2mat(province_nn, style="C", zero.policy=FALSE )
+
+nbmat = nb2mat(province_nn, style = "C")
+
+```
+
+Testing local moran's I
+```{r}
+
+local_MI_function = function(data, w1){
+  n = length(data)
+  x.bar = mean(data)
+  LMIs = rep(NA,n)
+
+  for (i in 1:n) {
+    num = den = 0
+  
+    for (j in 1:n) {
+      num = num + w1[j,i]*(data[j] - x.bar)
+      den = den + (data[j] - x.bar)^2
+    }
+  
+    LMIs[i] = (data[i] - x.bar) * num / (den * 1/n)
+  }
+  
+  return(LMIs)
+}
+
+lm_func = function(input, mat){
+  
+  n = length(input)
+  y.bar = mean(input)
+  locals = c()
+  
+  for (i in 1:nrow(mat)) {
+    
+    nom = n * (input[i] - y.bar)
+    denom = sum((input - y.bar)^2)
+    tail = sum(mat[i,] * (input - y.bar))
+    
+    locals[i] = tail * nom / denom
+  }
+  
+  return(locals)
+  
+}
+
+lm_func(x.og, w1)
+
+w1 = matrix(c(0,1/2,1/2,0,0,
+              1/3,0,1/3,1/3,0,
+              1/3,1/3,0,1/3,0,
+              0,1/3,1/3,0,1/3,
+              0,0,0,1,0), nrow = 5, ncol = 5)
+
+x.og = c(8,6,6,3,2)
+local_MI_function(x.og, w1)
+
+
+nbl = spdep:: nb2listw(province_nn, style = "C", zero.policy = FALSE)
+nbl = province_nn[-c(20,29,32,34,228)]
+
+spdep::moran.test(provinces_data$city_count[-c(20,29,32,34,228)], nbl)
+spdep::moran.test(x.og,spdep:: mat2listw(w1))
+
+
+?nb2listw()
+
+
+
+```
+
+
+
+
+
+```{r}
+
+gl_moran = function(input, mat){
+  n = length(input)
+  y.bar = mean(input)
+  
+  nom = 0
+  denom = 0
+  denom2 = 0
+  
+  for (i in 1:nrow(mat)) {
+    
+    denom2 = denom2 + (input[i] - y.bar)^2
+    
+    for (j in 1:ncol(mat)) {
+      
+      nom = nom + mat[i,j] * (input[i] - y.bar) * (input[j] - y.bar)
+    
+      if(i != j) {
+        denom = denom + mat[i,j]
+      }
+      
+    }
+  }
+  
+  (n * nom) / (denom * denom2)
+  
+  
+}
+
+
+gl_moran(x.og, w1)
+gl_moran(provinces_data$city_count[-c(20,29,32,34,228)], nbmat)
+
+
+
+
+
+
+
+
+
+
+provinces_data$MRI =  c(rep(1,160), rep(2,355-160))#  
+LMRI = rep(NA, 355)
+LMRI[-c(20,29,32,34,228)] = lm_func(provinces_data$city_count[-c(20,29,32,34,228)], nbmat)
+
+ggplot() +
+  geom_sf(data = provinces_data, aes(fill = LMRI)) +
+  geom_sf(data = cities_sf, color = "black", size = 1, shape = 21, fill = "white") +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Number of Cities per Province with City Locations",
+       fill = "City Count")
+
+library(ape)
+Moran.I(provinces_data$city_count[-c(20,29,32,34,228)], nbmat)
+
+Moran.I(x.og, w1)
+
+```
+
+
+now trying to define hotspots from this
+```{r}
+muni_with_2_cities <- provinces_data %>%
+  filter(city_count == 2)
+
+
+muni_dissolved <- muni_with_2_cities %>%
+  mutate(dummy = 1) %>%  # Temporary dummy column to allow grouping
+  st_union() %>%
+  st_cast("POLYGON") %>%  # Separate disconnected parts
+  st_sf() 
+
+
+muni_nn = poly2nb(muni_with_2_cities)
+
+adj_matrix <- st_touches(muni_with_2_cities)
+
+library("igraph")
+
+g <- graph_from_adj_list(adj_matrix)
+components <- components(g)$membership
+
+# Attach cluster ID to each polygon
+muni_with_2_cities$group_id <- components
+merged_muni <- muni_with_2_cities %>%
+  group_by(group_id) %>%
+  summarise(geometry = st_union(geometry)) %>%
+  ungroup()
+
+ggplot() +
+  geom_sf(data = merged_muni, fill = "orange", color = "black") +
+  theme_minimal() +
+  labs(title = "Merged Municipalities with 2 Cities")
+
+
+```
+
+```{r}
+geo_hs = merged_muni[1,]
+st_crs(geo_hs) <- NA
+
+box_counting(10, geo_hs$geometry)
+
+```
+
+
+shifiting point within a boundary
+```{r}
+cities_safe = mask_random(cities[,c("lng","lat")], 1)
+cities2  = cities
+cities2$lng = cities_safe$lng
+cities2$lat = cities_safe$lat
+
+cities_sf <- st_as_sf(cities2, coords = c("lng", "lat"), crs = 4326)  # WGS84
+
+# This adds province attributes to each city based on location
+cities_with_province <- st_join(cities_sf, provinces, join = st_within)
+
+city_counts <- cities_with_province %>%
+  st_drop_geometry() %>%  # drop spatial geometry for grouping
+  group_by(NAME_1.y) %>%
+  summarise(city_count = n())
+
+provinces_data <- provinces %>%
+  left_join(city_counts, by = c("NAME_1" = "NAME_1.y"))
+
+
+ggplot() +
+  geom_sf(data = provinces_data, aes(fill = city_count)) +
+  geom_sf(data = cities_sf, color = "black", size = 1, shape = 21, fill = "white") +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Number of Cities per Province with City Locations",
+       fill = "City Count")
+
+
+
+
+
+```
+
+
+```{r}
+x = cities[,3:4]
+r = 1
+
+N <- nrow(x)
+if (length(r) == 1){
+  r <- rep(r, N)
+}
+
+ra <- r * stats::runif(N)
+a <-  stats::runif(N, max = 2*pi)
+
+px <- ra * cos(a) + x[,1]
+py <- ra * sin(a) + x[,2]
+```
+
+
+```{r}
+nl_outline <- st_read("F:/Desktop/R files/gadm41_NLD_shp/gadm41_NLD_0.shp")
+
+plot(nl_outline$geometry, axes = TRUE)#, add = TRUE)
+plot(st_buffer(cities_sf$geometry[1], 100000), axes = TRUE, add = TRUE)
+plot(cities_sf$geometry[1], axes = TRUE, pch = 20, col = "blue", add = TRUE)
+
+
+plot(overlap$geometry)
+overlap_points = st_sample(overlap, 10)
+
+buffer = st_buffer(cities_sf$geometry[1:3], 100000)
+overlap = st_intersection(nl_outline, buffer)
+
+
+plot(nl_outline$geometry, axes = TRUE)
+plot(overlap, col = "lightblue", add = TRUE)
+plot(overlap_points, add = TRUE, col = "blue")
+
+```
+
+```{r}
+
+safe_point_func = function(point, r = 100000){
+  #nl_outline <- st_read("F:/Desktop/R files/gadm41_NLD_shp/gadm41_NLD_0.shp")
+  buffer = st_buffer(point, r)
+  overlap = st_intersection(nl_outline, buffer)
+  
+  st_sample(overlap, 1)
+  
+}
+
+safe_points = sapply(cities_sf$geometry, function(x) safe_point_func(x))
+
+
+buffers = st_buffer(cities_sf$geometry, 100000)
+inters = sapply(buffers, function(x) st_intersection(x$geometry, nl_outline))
+
+intersects = st_intersection(safe_points[[1]], nl_outline)
+
+
+buffs = st_buffer(cities_sf$geometry, 100000) %>% st_intersection(nl_outline)
+safe_samples = sapply(buffs,function(x) st_sample(x, 1))
+
+list(buffs[1:3]) %>% st_sample(1)
+
+
+vapply(1:10, function(x) st_sample(buffs[x], 1))
+
+
+safe_samples[c(1:3)]
+
+safe_samples = rep(NA, 363)
+for (i in 1:length(safe_samples)) {
+  safe_samples[i] = st_sample(buffs[i], 1)
+}
+
+
+dplyr::safe_samples
+
+unlist(safe_samples)
+
+
+is(safe_samples)
+
+bound = rbind(safe_samples)
+bound[1,]
+
+safe_samples[c(1:3)]
+
+st_as_sf(safe_samples[c(1:3)])
+
+
+plot(nl_outline$geometry, axes = TRUE)
+plot(cities_sf$geometry, add = TRUE, pch = 20, col = "red")
+plot(sampled_points$point, add = TRUE, pch = 20, col = "blue")
+
+
+buffs <- st_sf(geometry = buffs)
+
+sampled_points <- buffs %>%
+  rowwise() %>%
+  mutate(point = list(st_sample(geometry, 1))) %>%
+  tidyr:: unnest(cols = c(point)) %>%
+  st_as_sf()
+
+
+
+```
+
+```{r}
+safe_points_func = function(points){
+  buffs = st_buffer(points$geometry, 100000) %>% st_intersection(nl_outline)
+
+  buffs <- st_sf(geometry = buffs)
+  
+  sampled_points <- buffs %>%
+    rowwise() %>%
+    mutate(point = list(st_sample(geometry, 1))) %>%
+    tidyr:: unnest(cols = c(point)) %>%
+    st_as_sf()
+
+  return(sampled_points$point)
+  
+  
+}
+
+safe_cities = safe_points_func(cities_sf)
+
+plot(nl_outline$geometry, axes = TRUE)
+plot(cities_sf$geometry, add = TRUE, pch = 20, col = "red")
+plot(safe_cities, add = TRUE, pch = 20, col = "blue")
+
+```
+
+
+```{r}
+municipalities <- st_read("F:/Desktop/R files/gadm41_NLD_shp/gadm41_NLD_2.shp")
+municipalities <- st_read("F:/Desktop/R files/gadm41_NLD_shp/gadm41_NLD_2.shp")
+
+municipalities = municipalities[municipalities$ENGTYPE_2 == "Municipality",]
+
+nl_outline = st_union(municipalities)
+
+
+cities_sf <- st_as_sf(cities, coords = c("lng", "lat"), crs = 4326)  # WGS84
+safe_cities = st_as_sf(safe_cities)
+
+# This adds province attributes to each city based on location
+cities_with_province <- st_join(cities_sf, municipalities, join = st_within)
+cities_with_province2 <- st_join(safe_cities, municipalities, join = st_within)
+
+
+city_counts <- cities_with_province %>%
+  st_drop_geometry() %>%  # drop spatial geometry for grouping
+  group_by(NAME_2) %>%
+  summarise(city_count = n())
+
+city_counts2 <- cities_with_province2 %>%
+  st_drop_geometry() %>%  # drop spatial geometry for grouping
+  group_by(NAME_2) %>%
+  summarise(city_count = n())
+
+
+municipalities_data <- municipalities %>%
+  left_join(city_counts, by = c("NAME_2" = "NAME_2"))
+
+municipalities_data2 <- municipalities %>%
+  left_join(city_counts2, by = c("NAME_2" = "NAME_2"))
+
+municipalities_data$city_count[is.na(municipalities_data$city_count)] = 0
+municipalities_data2$city_count[is.na(municipalities_data2$city_count)] = 0
+
+par(mfrow = c(1,2))
+
+ggplot() +
+  geom_sf(data = municipalities_data, aes(fill = city_count)) +
+  geom_sf(data = cities_sf, color = "black", size = 1, shape = 21, fill = "white") +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Original cities per municipality",
+       fill = "City Count")
+
+```
+
+```{r}
+
+
+ggplot() +
+  geom_sf(data = municipalities_data2, aes(fill = city_count)) +
+  geom_sf(data = safe_cities, color = "black", size = 1, shape = 21, fill = "white") +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  labs(title = "Safe cities per municipality",
+       fill = "City Count")
+
+```
+
+
+```{r}
+library(sf)
+ogp = cities_sf$geometry[100]
+
+buffers = st_buffer(ogp, 100000)
+inters =  st_intersection(buffers, nl_outline)
+
+sfp = st_sample(inters, 1)
+
+plot(nl_outline)
+plot(inters, col = "lightblue", add = TRUE)
+plot(ogp, add = TRUE, lwd = 5, pch = 20, col = "blue")
+plot(sfp, add = TRUE, lwd = 5, pch = 20, col = "red")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+

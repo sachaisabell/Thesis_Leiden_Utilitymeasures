@@ -1,0 +1,235 @@
+---
+title: "LISA tryout"
+output: pdf_document
+date: "2025-05-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## Gi & Gi* statistics
+```{r}
+d = matrix(c(
+  1,1,1,0,0,
+  1,1,1,1,0,
+  1,1,1,1,0,
+  0,1,1,1,1,
+  0,0,0,1,1
+), nrow = 5, ncol = 5)
+
+Gi_function = function(data, d, star = FALSE) {
+  n = length(data)
+  GIs = rep(NA,n)
+
+  for (i in 1:n) {
+    num = den = 0
+  
+    for (j in 1:n) {
+      if (star == FALSE & i == j) next
+      
+      else {
+        num = num + d[i,j] * data[j]
+        den = den + data[j]
+      }
+      
+    }
+  
+    GIs[i] = num / den
+  }
+  
+  return(GIs)
+}
+
+Gi_function(c(x.og), d, star = TRUE)
+### this works out: 0.7058824 0.8947368 0.8947368 0.6363636 0.1304348
+
+
+
+Gi_function(provinces_data[-c(20,29,32,34,228),]$values, weight.matrix(provinces_data[-c(20,29,32,34,228),], style = "B", "matrix", "area"), star = TRUE)
+
+
+Gi_func = function(original, safe, style = c("W","C","B"), type = c("grid", "area"), star = FALSE){
+  if(type == "grid"){
+    og = original$value$mean %>% raster::as.matrix(); og[is.na(og)] = 0
+    sf = original$value$mean %>% raster::as.matrix(); sf[is.na(sf)] = 0
+    
+    original.weights = weight.matrix(original, style = style, map = type, output = "matrix")
+    safe.weights = weight.matrix(safe, style = style, map = type, output = "matrix")
+    
+    print(c(original$value$mean))
+    print(original.weights)
+
+    
+    Gi.original = Gi_function(c(og), original.weights, star = star)
+    Gi.safe = Gi_function(c(sf), safe.weights, star = star)
+  }
+  
+  if(type == "area"){
+    
+    original.weights = weight.matrix(original, style = style, map = type, output = "matrix")
+    safe.weights = weight.matrix(safe, style = style, map = type, output = "matrix")
+    
+    Gi.original = Gi_function(original$values, original.weights, star = star)
+    Gi.safe = Gi_function(safe$values, safe.weights, star = star)
+  }
+  
+  
+  return(list("original" = Gi.original, 
+              "safe" = Gi.safe))  
+}
+
+
+
+Gi1 = Gi_func(provinces_data[-c(20,29,32,34,228),],provinces_data[-c(20,29,32,34,228),],"B", type = "area", star = TRUE)
+
+Gi2 = Gi_func(map_original,map_original,"B", type = "grid", star = TRUE)
+
+gridmat = matrix(Gi2$original, 62,61)
+
+
+plot(raster(gridmat))
+
+```
+ 
+## Local Geary
+```{r}
+d1 = n1 = 0
+w1 = matrix(c(0,1/2,1/2,0,0,
+              1/3,0,1/3,1/3,0,
+              1/3,1/3,0,1/3,0,
+              0,1/3,1/3,0,1/3,
+              0,0,0,1,0), nrow = 5, ncol = 5)
+
+x.og = c(8,6,6,3,2)
+
+
+local_geary_function = function(data, w1){
+  n = length(data)
+  gearies = rep(NA, n)
+  x.bar = mean(data)
+  
+  m2 = sum((data - x.bar)^2)/(n-1)
+  
+  for (i in 1:n) {
+    geary = 0
+    
+    for (j in 1:n) {
+      geary = geary + w1[i,j] * (data[i] - data[j])^2
+      
+      
+      
+    }
+    gearies[i] = geary * (1/m2)
+  }
+  
+  return(gearies)
+}
+
+local_geary_function(x.og, w1)
+
+```
+```{r}
+x.og = matrix(c(2,4,0,0,0,0,4,2,0,0,0,0,
+                0,0,2,3,2,0,0,0,0,5,4,1,
+                0,0,3,4,2,0,0,0,0,4,0,2),
+                ncol = 6, nrow = 6, byrow = TRUE)
+
+raster = raster::raster(x.og)
+polygons = raster::rasterToPolygons(raster)
+neighbors = poly2nb(polygons, queen = TRUE)
+w1 = nb2mat(neighbors, style = "W")
+n = 36
+
+rast = rasterFromCells(x.og, 1:70)
+poly = poly2nb(rasterToPolygons(rast))
+nbw = nb2listw(poly)
+
+localC(c(x.og), nbw, zero.policy = TRUE)
+
+local_geary_function(c(x.og), nb2mat(poly))
+
+library(raster)
+```
+
+```{r}
+local_geary_func = function(original, safe, style = c("W","C","B"), type = c("grid", "area")){
+  
+  if(type == "grid"){
+    
+    original.weights = weight.matrix(original, style = style, map = type, output = "list")
+    safe.weights = weight.matrix(safe, style = style, map = type, output = "list")
+    
+    MI.original = spdep::localmoran(c(original), original.weights)
+    MI.safe = spdep::localmoran(c(safe), safe.weights)
+  }
+  
+  if(type == "area"){
+    
+    original.weights = weight.matrix(original, style = style, map = type, output = "list")
+    safe.weights = weight.matrix(safe, style = style, map = type, output = "list")
+    
+    MI.original = spdep::localmoran(original$values, original.weights)
+    MI.safe = spdep::localmoran(safe$values, safe.weights)
+  }
+  
+  
+  return(c(MI.original, MI.safe))  
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

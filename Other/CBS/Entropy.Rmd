@@ -1,0 +1,183 @@
+---
+title: "Entropy"
+output: pdf_document
+date: "2025-04-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+## libraries
+library(dplyr)
+library(ggplot2)
+library(sdcSpatial)
+library(raster)
+
+safe.dwellings = mask_random(dwellin)
+```
+
+
+### EBIL / Shannon's entropy
+- important to predefine the categories likely
+- can do this either based on the range of the categories (each x points wide)
+- or on the number of observations in a category
+
+first based on the x points wide here
+```{r}
+n = 10
+categories.x = seq(min(dwellings$consumption) - min(dwellings$consumption)*.0000001, max(dwellings$consumption), length.out = n);categories.x
+#og.perc = table(cut(dwellings$consumption, breaks = 10)) # take a weird minimum value for some reason, so above go slightly lower so that values == min are also taken into account
+
+og.perc = table(cut(dwellings$consumption, breaks = categories.x))
+sf.perc = table(cut(dwellings$consumption, breaks = categories.x))
+
+sum(og.perc) == nrow(dwellings)
+
+min(dwellings$consumption)
+sapply(1:10, function(x) sum(dwellings$consumption <= categories.x[x]))
+
+```
+
+
+```{r}
+# now calc the percentages
+percentages.og = og.perc/sum(og.perc) * 100
+
+
+
+
+```
+
+
+
+
+now on the number of point within a category
+```{r}
+
+arcat = arules::discretize(dwellings$consumption, breaks = 10)
+table(arcat)
+```
+
+
+
+----------------------------------
+nvm, we do not change the actual values, so have to work with a grid
+```{r}
+map_original = sdc_raster(dwellings[,1:2], dwellings$consumption)
+map_safe = protect_smooth(map_original)
+
+dat_original = raster::as.matrix(map_original$value$mean); dat_original[is.na(dat_original)] = 0
+dat_safe = raster::as.matrix(map_safe$value$mean); dat_safe[is.na(dat_safe)] = 0
+
+max(dat_original)
+
+n = 10
+categories.x = seq(min(dat_original) -0.000001, max(dat_original), length.out = n);categories.x
+
+og.perc = table(cut(dat_original, breaks = categories.x)) / length(dat_original) * 100
+sf.perc = table(cut(dat_safe, breaks = categories.x))
+sf.perc = sf.perc / sum(sf.perc) * 100
+
+
+sum(table(cut(dat_original, breaks = categories.x)))
+
+sapply(1:10, function(x) sum(dat_original <= categories.x[x]))
+
+sum(sf.perc)
+
+sum(dat_original == 0)
+
+EBIL(og.perc)
+```
+```{r}
+
+EBIL = function(percentages){
+  
+  -sum(ifelse(percentages == 0, 0, (percentages * log(percentages))))
+  
+  
+}
+
+EBIL_measure_func = function(safe, original, n = 10){
+  
+  categories = seq(min(original)-0.000001, max(original), length.out = n)
+  
+  og.perc = table(cut(original, breaks = categories)) / length(original) 
+  sf.perc = table(cut(safe, breaks = categories))
+  sf.perc = sf.perc / sum(sf.perc) 
+  
+  sf.EBIL = EBIL(sf.perc); print(sf.EBIL)
+  og.EBIL = EBIL(og.perc); print(og.EBIL)
+  
+  abs(sf.EBIL - og.EBIL) / (sf.EBIL + og.EBIL)
+}
+
+
+EBIL_measure_func(dat_safe, dat_original)
+
+abs(-384.0988 - -405.1947) / (-384.0988 + -405.1947)
+
+
+
+perc = c(25,25,25,25)/100
+EBIL(perc)
+
+ifelse(perc == 25, 1, 0)
+
+-sum(perc * log(perc))
+log(4)
+
+```
+
+
+### EBIL measire FINAL
+look in Lin for the acceptable ranges (p. 91/109)
+```{r}
+EBIL = function(percentages){
+  
+  -sum(ifelse(percentages == 0, 0, (percentages * log(percentages))))
+  
+}
+
+EBIL_measure_func = function(safe, original, n = 10){
+  # divide the range of values into 10 categories
+  categories = seq(min(original)-0.000001, max(original), length.out = n)
+  
+  og.perc = table(cut(original, breaks = categories)) / length(original) 
+  sf.perc = table(cut(safe, breaks = categories))
+  sf.perc = sf.perc / sum(sf.perc) 
+  
+  sf.EBIL = EBIL(sf.perc)
+  og.EBIL = EBIL(og.perc)
+  
+  abs(sf.EBIL - og.EBIL) / (sf.EBIL + og.EBIL)
+}
+
+
+EBIL_measure_func(dat_safe, dat_original)
+```
+
+
+
+
+
+https://www.fil.ion.ucl.ac.uk/~wpenny/course/info.pdf
+
+https://www.rdocumentation.org/packages/YEAB/versions/1.0.6/topics/KL_div
+
+https://search.r-project.org/CRAN/refmans/FNN/html/KL.divergence.html
+
+https://stackoverflow.com/questions/61747063/how-to-calculate-kullback-leiber-divergence-of-kernel-estimation-in-r
+
+https://search.r-project.org/CRAN/refmans/flexmix/html/KLdiv.html
+
+https://cran.rstudio.com/web/packages/YEAB/vignettes/KL_div.html
+
+
+
+
+
+

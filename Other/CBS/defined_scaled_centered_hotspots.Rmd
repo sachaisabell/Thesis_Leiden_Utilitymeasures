@@ -1,0 +1,181 @@
+---
+title: "defined_unbounded_hotspots"
+output: pdf_document
+date: "2025-04-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+- define hotspots themselves
+- should be bounded or not?
+- center around the origin
+- scale to the same size
+
+## defines polygons hotspots
+https://gis.stackexchange.com/questions/323038/dissolve-only-overlapping-polygons-in-r-using-sf
+https://stackoverflow.com/questions/63024545/r-sf-find-polygons-outside-of-multiple-overlapping-polygons
+```{r}
+library(dplyr)
+library(ggplot2)
+library(lidaRtRee)
+library(sf)
+library(purrr)
+
+# function to extend the plot, so hotspots are not cut off at the borders
+d2d = function(data, var1, var2, exp=0.1, minimum) {
+  nn = 2
+  # Create plot, but expand x and y ranges well beyond data
+  p=ggplot(data, aes_string(var1, var2)) +
+    geom_density_2d() +
+    scale_x_continuous(limits=c(min(data[,var1]) - nn*diff(range(data[,var1])),
+                                max(data[,var1]) + nn*diff(range(data[,var1])))) +
+    scale_y_continuous(limits=c(min(data[,var2]) - nn*diff(range(data[,var2])),
+                                max(data[,var2]) + nn*diff(range(data[,var2]))))
+  
+  # Get min and max x and y values among all density contours
+  pb = ggplot_build(p)
+
+  xyscales = lapply(pb$data[[1]][,c("x","y")], function(var) {
+    rng = range(var) 
+    rng + c(-exp*diff(rng), exp*diff(rng))
+  })
+
+  # Set x and y ranges to include complete density contours
+  ggplot(data, aes_string(var1, var2)) +
+    #geom_density_2d_filled() +
+    geom_density_2d_filled(contour = TRUE,breaks = c(minimum, 1)) +
+    geom_density_2d() + #bins = 10) +
+    scale_x_continuous(limits=xyscales[[1]]) +
+    scale_y_continuous(limits=xyscales[[2]]) 
+}
+
+# generating the base data (two hotspots)
+set.seed(123)
+df <- data.frame(x = c(abs(rnorm(200)), abs(rnorm(200,4))), y = c(abs(rnorm(200)), abs(rnorm(200,4))))
+df.plot = d2d(df, "x","y", minimum = 0.03) # minimum is the defined border of the 
+
+# extracting information from the plot
+ld.df = layer_data(df.plot)
+
+
+# separating the different polygons based on subgroup
+ld.df$pol <- paste0(ld.df$subgroup, "_", ld.df$group)
+ids <- unique(ld.df$pol)
+
+# Split contours based on the id
+pols <- lapply(ids, function(x){
+  topol <- ld.df[ld.df$pol == x, ]
+  closepol <- rbind(topol, topol[1, ])
+  pol <- st_polygon(list(as.matrix(closepol[,c("x", "y")])))
+  df <- unique(topol[, grepl("level", names(topol))])
+  tofeatures <- st_as_sf(df, geometry=st_sfc(pol))
+  return(tofeatures)
+})
+
+
+final_pols <- do.call(rbind, pols)
+
+# now something else
+parts <- st_cast(st_union(final_pols),"POLYGON")
+plot(parts) # gets no overlapping, separate polygons, yay!
+
+clust <- unlist(st_intersects(final_pols, parts))
+
+diss <- cbind(final_pols, clust) %>%
+  group_by(clust) %>%
+  summarize(box = paste(nlevel, collapse = ", "))
+
+plot(diss[,1], axes = TRUE)
+
+```
+
+## now use these two hotspots (ignore the coupling for now) and center around origin (based on centroid)
+```{r} 
+# first calculate the centroid
+cent1 = st_centroid(diss$geometry[1])
+
+# then subtract from the points
+poly.og = diss$geometry[1]
+poly.centered = diss$geometry[1] - cent1
+plot(poly.og, axes = TRUE, ylim = c(-2,2), asp = 1, col = "blue")
+plot(poly.centered, axes = TRUE, add = TRUE, col = "red")
+
+```
+
+## now to scale
+```{r}
+area.1 = st_area(poly.centered)
+poly.scale = poly.centered * sqrt(1/area.1)
+
+plot(poly.og, axes = TRUE, ylim = c(-2,2), asp = 1, col = "blue")
+plot(poly.centered, axes = TRUE, add = TRUE, col = "red")
+plot(poly.scale, add = TRUE, col = "green")
+
+```
+
+## center and scale function
+```{r}
+# input in form of: diss$geometry[1]
+
+scale.center.poly = function(polygon){
+  # calculate centroid and center on origin
+  centroid = st_centroid(polygon)
+  c.polygon = polygon - centroid
+  
+  # calculate area and rescale
+  area = st_area(polygon)
+  sc.polygon = c.polygon * sqrt(1/area)
+  
+  return(sc.polygon)
+  
+}
+
+sc1 = scale.center.poly(diss$geometry[1])
+plot(sc1, axes = TRUE)
+```
+
+
+## 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

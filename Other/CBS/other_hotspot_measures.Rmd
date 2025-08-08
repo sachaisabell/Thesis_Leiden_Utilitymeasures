@@ -1,0 +1,173 @@
+---
+title: "other_hotspot_measures"
+output: pdf_document
+date: "2025-04-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+ 
+```{r}
+library("aspace")
+library(sdcSpatial)
+library(dplyr)
+library(sp)
+library(sf)
+library("scales")
+library("adehabitatHR")
+
+
+
+
+df.original <- base::data.frame(x = c(abs(rnorm(200)), abs(rnorm(200,4))), y = c(abs(rnorm(200)), abs(rnorm(200,4))))
+df.safe = mask_random(df.original, r = 0.5)
+```
+
+ 
+### ODI / ellipse orientation
+```{r}
+ellipse_angle_func = function(points) {
+  sampled = points
+  
+  # define the SDE ellipse
+  sde = calc_sde(points = sampled, id= 1)
+  
+  # find the point farthest away from the center of the ellipse (on the major axis (ma))
+  anglepoint = which.max(sqrt((sde$LOCATIONS$x - sde$ATTRIBUTES$CENTRE.x)^2 +  (sde$LOCATIONS$y - sde$ATTRIBUTES$CENTRE.y)^2))
+  anglepointloc = sde$LOCATIONS[anglepoint,]
+  
+  # plotting the points, ellipse centre, point on the ma, and the ellipse itself, respectively
+  plot(sampled, axes = TRUE, asp = 1)
+  points(sde$ATTRIBUTES$CENTRE.x,sde$ATTRIBUTES$CENTRE.y, col = "blue", pch = 20, lwd = 5)
+  points(anglepointloc[,2], anglepointloc[,3], lwd = 5, col = "green")
+  lines(sde$FORPLOTTING$coordsSDE[,1], sde$FORPLOTTING$coordsSDE[,2], col = "red")
+
+  # calculate the angle of the  ellipse based on the centre and the point on the ma
+  angleSDE = atan(anglepointloc$y/anglepointloc$x)* 180/pi
+  
+  # standardize angles
+  if(angleSDE < 0) return(angleSDE + 180)
+  
+  return(angleSDE)
+}
+
+
+ODI_func = function(safe, original){
+  # calculate the angle of the SDE for both safe and original data
+  orient.safe = ellipse_angle_func(safe)
+  orient.og = ellipse_angle_func(original)
+  
+  # calculate the ODI measure and return
+  ODI = abs(orient.og - orient.safe) / 180
+  
+  return(ODI)
+  
+}
+
+
+ODI_func(df.safe, df.original)
+
+
+```
+
+ 
+#### Minimum convex polygon
+```{r}
+
+MCP_func = function(data){
+  data$ID = rep('a',nrow(data))
+  coordinates(data) <- data[,c("x","y")]
+  
+  MCP = mcp(data[,3], percent = 100)
+  
+  #plot(data$x, data$y)
+  #plot(MCP, add = TRUE)
+  
+  MCP.coor = as.data.frame(MCP@polygons[[1]]@Polygons[[1]]@coords)
+  MCP.coor$ID = rep("a", nrow(MCP.coor))
+  
+  MCP.poly = st_as_sf(as.data.frame(MCP.coor), coords = c("x","y")) %>% group_by(ID) %>% summarise(geometry = st_combine(geometry)) %>% st_cast("POLYGON")
+
+  return(MCP.poly)
+}
+
+convex_poly_func = function(safe, original){
+  
+  MCP.safe = MCP_func(safe)
+  MCP.og = MCP_func(original)
+    
+  overlap = st_intersection(MCP.safe, MCP.og)
+  MCP.ratio = (st_area(MCP.og) - st_area(overlap)) / st_area(MCP.og)
+
+  plot(MCP.og$geometry, axes  = TRUE, asp = 1, col = alpha("blue",.4))
+  plot(MCP.safe$geometry, add= TRUE, col = alpha("red",.4))
+  plot(overlap$geometry, add = TRUE, col = alpha("green",0.4))
+
+  return(MCP.ratio)
+}
+
+
+convex_poly_func(df.safe,df.original)
+
+
+```
+
+
+#### Ellipse ratio
+```{r}
+ellipse_func = function(points) {
+  sampled = points
+  sde = calc_sde(points = sampled, id= 1)
+  
+  locs = sde$LOCATIONS
+  ellpol = st_as_sf(locs, coords = c("x","y")) %>% group_by(id) %>% summarise(geometry = st_combine(geometry)) %>% st_cast("POLYGON")
+  
+  return(ellpol)
+}
+
+ellipse_ratio_func = function(safe, original){
+  
+  ell.safe = ellipse_func(safe)
+  ell.og = ellipse_func(original)
+    
+  overlap = st_intersection(ell.safe, ell.og)
+  ell.ratio = (st_area(ell.og) - st_area(overlap)) / st_area(ell.og)
+
+  plot(ell.og$geometry, axes  = TRUE, asp = 1, col = alpha("blue",.4))
+  plot(ell.safe$geometry, add= TRUE, col = alpha("red",.4))
+  plot(overlap$geometry, add = TRUE, col = alpha("green",0.4))
+
+  return(ell.ratio)
+}
+
+
+ellipse_ratio_func(df.safe, df.original)
+
+
+```
+
+
+#### NNH.di (nearest neighbor hierarchical clustering divergence)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

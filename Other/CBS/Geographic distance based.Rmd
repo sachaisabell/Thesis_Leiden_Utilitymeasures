@@ -1,0 +1,135 @@
+---
+title: "Geographic distance based"
+output: pdf_document
+date: "2025-03-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## Data
+```{r}
+# DATA 1 (from the quidelines)
+w.org = c(0,2,0,0,2,2,2,0,0,2,0,0,0,0,0,0)
+w.sa = c(0,2,2,0,0,2,0,0,2,2,0,0,0,0,0,0)
+m1_original = matrix(c(0,2,0,0,2,2,2,0,0,2,0,0,0,0,0,0),nrow = 4)
+m1_safe = matrix(c(0,2,2,0,0,2,0,0,2,2,0,0,0,0,0,0),nrow = 4)
+
+# DATA 2
+# x.o en y.o containing the original x and y coordinates
+# x.s en y.s containing the safe x and y coordinates
+# so cell 1 moves from (1,1) to (3,3)
+places = as.matrix(data.frame(
+                x.o=c(1,1,4,2), 
+                y.o=c(1,4,1,4),
+                
+                x.s=c(3,1,4,2), 
+                y.s=c(3,3,4,4)))
+```
+
+# Utility measures
+## Displacement distance
+```{r}
+# creating a distance matrix and selecting diagonal using proxy works fine, but it calculates unnecessary distances, which is inconvenient for large data sets
+dist.mat = proxy::dist(places[,1:2], places[,3:4],method="euclidean")
+sum(diag(dist.mat))
+
+# trying with a different function instead
+displacement_distance = function(dataframe){
+  sum(sqrt((dataframe[,1] - dataframe[,3])^2 + (dataframe[,2] - dataframe[,4])^2))
+}
+
+displacement_distance(places)
+
+```
+
+## KWD
+```{r}
+library("SpatialKWD")
+
+xs = rep(1:62,61)
+ys = rep(1:61, each = 62)
+coordinates = as.matrix(cbind(xs, ys))
+
+w.original = c(dat_original)
+w.safe = c(dat_safe)
+weights = as.matrix(cbind(w.original, w.safe))
+
+KWD = compareOneToOne(coordinates, weights)$distance
+KWD
+
+## testing with example from guidelines, arrive at same answer of 0.4
+ys = rep(1:4, 4)
+xs = rep(1:4, each = 4)
+coor = as.matrix(cbind(xs,ys))
+
+wei = as.matrix(cbind(w.org, w.sa))
+
+KWD = compareOneToOne(coor, wei)$distance
+KWD
+```
+https://scholarcommons.sc.edu/cgi/viewcontent.cgi?article=7428&context=etd
+```{r}
+nr = nrow(dat_original)
+nc = ncol(dat_original)
+
+xs = rep(1:nr,nc)
+ys = rep(1:nc, each = nr)
+coordinates = as.matrix(cbind(xs, ys))
+
+w.original = c(dat_original)
+w.safe = c(dat_safe)
+weights = as.matrix(cbind(w.original, w.safe))
+
+KWD = compareOneToOne(coordinates, weights)$distance
+KWD
+
+nrow(dat_original); nrow(dat_safe)
+ncol(dat_original); ncol(dat_safe)
+
+
+```
+
+
+## MDi (mean divergence index)
+First calculate the original mean coordinates, then the safe mean coordinates.
+Then find out which is the farthest edge point from the original mean in the safe map (since this is the farthest a displaced mean could be).
+This is relatively easy in this case since we have a square, but when using areal map, gets a little more complicated.
+Could be mediated by using the farther point away (not necessarily on edge), which could be a better representation anyway
+```{r}
+## this application is specifically for rectangle areas
+# where corners are always farthest point away
+# provide the dimensions (nrow, ncol) of the raster
+mdi_function_rect = function(data){#, dimensions){
+  col_means = t(as.matrix(colMeans(data)))
+  og.coor = col_means[1:2]
+  
+  #maxrow = c(1,dimensions[1])
+  #maxcol = c(1,dimensions[2])
+  maxrow = c(1,nrow(data))
+  maxcol = c(1,nrow(data))
+  
+  row = which.max(abs(og.coor[1] - maxrow))
+  col = which.max(abs(og.coor[2] - maxcol))
+  
+  farthest = c(maxrow[row], maxcol[col])
+  
+  numerator = displacement_distance(col_means)
+  denominator = displacement_distance(t(as.matrix(c(og.coor, farthest))))
+  
+  numerator/denominator
+  
+}
+
+
+mdi_function_rect(places, c(4,4))
+
+
+```
+
+
+
+

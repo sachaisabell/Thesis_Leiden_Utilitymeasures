@@ -1,0 +1,216 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-05-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(readxl)
+
+municipalities <- st_read("F:/Desktop/R files/gadm41_NLD_shp/gadm41_NLD_2.shp")
+municipalities = municipalities[municipalities$ENGTYPE_2 == "Municipality",]
+nl_outline = st_union(municipalities)
+
+provinces <- st_read("F:/Desktop/R files/gadm41_NLD_shp/gadm41_NLD_1.shp")
+provinces$NAME_1[14] =  "Zuid-Holland"
+names_prov = provinces$NAME_1
+provinces1 = provinces %>% filter(NAME_1 %in% names_prov[c(1:5,7:12,14)])
+provinces1$NAME_2 = provinces1$NAME_1
+
+```
+
+
+## Soil information:  
+http://data.4tu.nl/datasets/c90215b3-bdc6-4633-b721-4c4a0259d6dc
+
+#### cation exchange capacity (CEC)
+```{r}
+library(sf)
+dd1 = read.csv("F:/Downloads/tbl_cal_CEC.csv")
+CEC <- st_as_sf(dd1, coords = c("X", "Y"), crs = 28992)  # first transform into an sf object, then set the right crs in next line
+CEC = st_transform(CEC, 4326)  # WGS84
+
+
+plot(nl_outline, axes = TRUE)
+plot(CEC$geometry, asp = 1, axes = TRUE, add = TRUE, pch = 20, col = "blue", cex = 0.1)
+
+
+### now per area 
+CEC_muni <- st_join(CEC, municipalities) %>%
+  st_drop_geometry() %>%  # drop spatial geometry for grouping
+  group_by(NAME_2) %>%
+  summarise(count = n())
+
+CEC_per_municipality <- municipalities %>%
+  left_join(CEC_muni, by = c("NAME_2" = "NAME_2"))
+
+CEC_per_municipality$count = ifelse(is.na(CEC_per_municipality$count), 0, CEC_per_municipality$count)
+
+
+
+CEC.areal = ggplot() +
+  geom_sf(data = CEC_per_municipality, aes(fill = count)) +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+CEC_point = ggplot() +
+  geom_sf(data = nl_outline) +
+  geom_sf(data = CEC) +
+  theme_minimal()
+
+
+grid.arrange(
+  CEC.areal, CEC_point,
+  ncol = 2
+)
+
+
+
+#### function for this, WORKS!!
+areal_data_func = function(points, areas){
+  
+  per_area = st_join(points, areas) %>%
+    st_drop_geometry() %>%  # drop spatial geometry for grouping
+    group_by(NAME_2) %>% # assuming there is a column NAME_2 which indicated the name of the areas (provincce/municipality)
+    summarise(count = n())
+  
+  linked = areas %>%
+    left_join(per_area, by = c("NAME_2" = "NAME_2"))
+  
+  linked$count = ifelse(is.na(linked$count), 0, linked$count)
+  
+  return(linked)
+  
+}
+
+try1 = areal_data_func(CEC, municipalities)
+try2 = areal_data_func(CEC, provinces1)
+
+
+
+CEC.areal = ggplot() +
+  geom_sf(data = try2, aes(fill = count)) +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+Natrium
+```{r}
+Nmgkg = read.csv("F:/Downloads/tbl_cal_N_tot_mgkg.csv")
+Nmgkg <- st_as_sf(Nmgkg, coords = c("X", "Y"), crs = 28992)  # first transform into an sf object, then set the right crs in next line
+Nmgkg = st_transform(Nmgkg, 4326)  # WGS84
+
+
+plot(nl_outline, axes = TRUE)
+plot(Nmgkg$geometry, asp = 1, axes = TRUE, add = TRUE, pch = 20, col = "blue", cex = 0.1)
+
+```
+
+Potassium
+```{r}
+Pmmol = read.csv("F:/Downloads/tbl_cal_P_ox_mmolkg.csv")
+Pmmol <- st_as_sf(Pmmol, coords = c("X", "Y"), crs = 28992)  # first transform into an sf object, then set the right crs in next line
+Pmmol = st_transform(Pmmol, 4326)  # WGS84
+
+
+plot(nl_outline, axes = TRUE)
+plot(Pmmol$geometry, asp = 1, axes = TRUE, add = TRUE, pch = 20, col = "blue", cex = 0.1)
+
+# now per municipality
+
+
+
+
+```
+https://www.nationaalgeoregister.nl/geonetwork/srv/dut/catalog.search#/metadata/b6bbcfd7-6d59-4881-89bd-69d5709e5c5c
+```{r}
+library("gpkg")
+library(terra)
+
+
+g = geopackage("F:/Downloads/geotechnischbooronderzoek (1)/brobhrgtvolledigeset.gpkg")
+
+(gpkg_table_pragma(g))
+
+```
+```{r}
+
+first = gpkg_vect(g, 'rtree_borehole_research_standardized_location')
+datafirst = data.frame(x = first$maxx, y = first$maxy) %>% st_as_sf(coords = c("x","y"), crs = 4326)
+
+plot(datafirst$geometry, col = "blue", cex = 0.2, pch = 19)
+plot(nl_outline, add = TRUE)
+
+
+```
+```{r}
+second = gpkg_vect(g, 'gpkg_contents')
+datasecond = data.frame(x = second$x, y = second$y) %>% st_as_sf(coords = c("x","y"), crs = 28992)  
+datasecond = st_transform(datasecond, 4326)  # WGS84
+
+plot(datasecond$geometry, col = "blue", cex = 0.2, pch = 19)
+plot(nl_outline, add = TRUE)
+
+
+```
+
+```{r}
+third = gpkg_vect(g, 'bro_point')
+
+datathird = data.frame(x = third$x_or_lon, y = third$y_or_lat) %>% st_as_sf(coords = c("x","y"), crs = 28992)  
+datathird= st_transform(datathird, 4326)  # WGS84
+
+plot(datathird$geometry, col = "blue", cex = 0.2, pch = 19)
+plot(nl_outline, add = TRUE)
+
+
+
+
+
+
+
+```
+
+```{r}
+
+
+
+```
+
+
+
+
+####################
+## making some real maps
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

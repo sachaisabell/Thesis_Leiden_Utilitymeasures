@@ -1,0 +1,312 @@
+---
+title: "K-function based"
+author: "Sacha van de Hoef"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+library(sp);install.packages("rgdal")
+library ("splancs")
+?khat()
+
+sp <- cbind(
+  x = c(2.5, 3.5, 7.2, 1.5),
+  y = c(6.2, 3.8, 4.4, 2.1))
+
+Pts1 = as.points(sp[,1], sp[,2])
+Pts2 = as.points(sp[,1]^0.7, sp[,2]^0.7)
+
+
+
+
+```
+
+```{r}
+library("ads")
+library("REAT")
+library(sdcSpatial)
+
+install.packages("REAT")
+kfun()
+
+df = dwellings[,1:2]
+areadf = abs(min(df$x) - max(df$x)) * abs(min(df$y) - max(df$y))
+df$ID = 1:nrow(df)
+
+
+ripley(df, "ID", "x", "y", areadf)
+
+data(GoettingenHealth1)
+
+area_goe <- 1753000000
+# area of Landkreis Goettingen (sqm)
+area_nom <- 1267000000
+# area of Landkreis Northeim (sqm)
+area_gn <- area_goe+area_nom
+sqrt(area_gn/pi)
+
+# this takes some seconds
+ripley(GoettingenHealth1[GoettingenHealth1$type == "phys_gen",], 
+"location", "lat", "lon", area = area_gn, t.max = 30000, t.sep = 300)
+
+library("spatstat")
+
+max(dist(GoettingenHealth1[,2:3], GoettingenHealth1[,2:3], ))
+
+plot(GoettingenHealth1[,2:3])
+```
+
+
+```{r}
+
+df = dwellings[,1:2]
+#df = df[1:3000,]
+
+win = as.ppp(df, c(min(df$x), max(df$x), min(df$y), max(df$y)))
+Ripk = Kest(win ,correction="isotropic")
+
+dfsafe = mask_random(df, 100)
+
+win2 = as.ppp(dfsafe, c(min(dfsafe$x), max(dfsafe$x), min(dfsafe$y), max(dfsafe$y)))
+Ripk2 = Kest(win2 ,correction="isotropic")
+
+plot(Ripk2)
+lines( Ripk$r,Ripk$iso)
+
+```
+
+
+```{r}
+
+plot(Ripk$r,Ripk$iso, col = "red", type = "l")
+lines(Ripk2$r, Ripk2$iso, col = "blue")
+lines(Ripk2$r,Ripk2$theo, col = "black")
+
+
+```
+
+```{r}
+
+dfnorm = data.frame(x = rnorm(nrow(df),mean= mean(df$x), sd= sd(df$x)),
+                    y = rnorm(nrow(df), mean(df$y), sd(df$y)))
+win3 = as.ppp(dfnorm, c(min(df$x), max(df$x), min(df$y), max(df$y)))
+Ripk3 = Kest(rpoispp(nrow(df)) ,correction="isotropic")
+
+
+plot(Ripk$r,Ripk$iso, col = "red", type = "l")
+lines(Ripk$r, Ripk2$iso, col = "gold")
+lines(Ripk$r, Ripk3$iso, col = "blue")
+
+lines(Ripk$r,Ripk$theo, col = "black")
+lines(Ripk$r,Ripk2$theo, col = "green")
+#lines(Ripk$r,Ripk3$theo, col = "pink")
+
+plot(Ripk3$r,Ripk3$iso, col = "red", type = "l")
+
+rpoispp()
+rnorm(10, 1, 2)
+```
+
+
+```{r}
+
+par(mfrow = c(1,3))
+plot(Ripk3, col = "red", type = "l")
+plot(Ripk2, col = "red", type = "l")
+plot(Ripk, col = "red", type = "l")
+lines(Ripk$r, pi*Ripk$r^2)
+
+
+```
+so if we do it right, then the ripk3 should be on the same line as the kpois for the ripk
+alright so this is not possible likely, since it doesnt make too much sense
+
+```{r}
+
+
+plot(Ripk3, col = "red", type = "l")
+
+
+r3 = (Ripk3$r)/diff(Ripk3$r)[1]
+kr3 = Ripk3$iso + pi*r3^2
+
+r2 = (Ripk2$r)/diff(Ripk2$r)[1]
+kr2 = Ripk2$iso + pi*r2^2
+
+r1 = (Ripk$r)/diff(Ripk$r)[1]
+kr1 = Ripk$iso + pi*r1^2
+
+plot(r2, kr2, type = "l", col = "red")
+lines(r3,kr3)
+lines(r1, kr1, col = "blue")
+
+
+```
+
+#### K function varation (L, L-r, K(r)/pi*r^2)
+```{r}
+
+df = dwellings[,1:2]
+dfsafe = mask_random(df, 100)
+dfnorm = data.frame(x = rnorm(nrow(df),mean= mean(df$x), sd= sd(df$x)),
+                    y = rnorm(nrow(df), mean(df$y), sd(df$y)))
+
+win = as.ppp(df, c(min(df$x), max(df$x), min(df$y), max(df$y)))
+RipL = Lest(win ,correction="isotropic")
+
+win2 = as.ppp(dfsafe, c(min(dfsafe$x), max(dfsafe$x), min(dfsafe$y), max(dfsafe$y)))
+RipL2 = Lest(win2 ,correction="isotropic")
+
+win3 = as.ppp(dfnorm, c(min(df$x), max(df$x), min(df$y), max(df$y)))
+RipL3 = Lest(rpoispp(nrow(df)) ,correction="isotropic")
+
+par(mfrow = c(1,3))
+plot(RipL3, col = "red", type = "l")
+plot(RipL2, col = "red", type = "l")
+plot(RipL, col = "red", type = "l")
+
+```
+```{r}
+
+
+par(mfrow = c(1,3))
+plot(RipL3 - RipL3$r, col = "red", type = "l")
+plot(RipL2- RipL2$r, col = "red", type = "l")
+plot(RipL- RipL$r, col = "red", type = "l")
+
+```
+
+```{r}
+
+par(mfrow = c(1,3))
+plot(Ripk3/(pi*Ripk3$r^2), col = "red", type = "l")
+plot(Ripk2/(pi*Ripk2$r^2), col = "red", type = "l")
+plot(Ripk/(pi*Ripk$r^2), col = "red", type = "l")
+```
+
+
+
+
+#### K intertype function (same as Cross-k i think)
+```{r}
+dfsafesafe = mask_random(dfsafe, 10)
+
+k13cross = rbind(df[1:100,], dfsafe[1:100,], dfsafesafe[1:100,])
+win.cross.13 = as.ppp(k13cross, c(min(k13cross$x), max(k13cross$x), min(k13cross$y), max(k13cross$y)))
+win.cross.13$origin = c(rep("a",100), rep("b", 100), rep("c", 100))
+win.cross.13$origin = as.factor(win.cross.13$origin)
+marks(win.cross.13) <- win.cross.13$origin
+
+cross.13 = Kcross(win.cross.13, "a", "c", correction = "isotropic")
+cross.23 = Kcross(win.cross.13, "c", "b", correction = "isotropic")
+
+par(mfrow=c(1,2))
+plot(cross.13, legend = FALSE)
+plot(cross.23, legend = FALSE)
+#lines(cross.23$r, pi*cross.23$r^2)
+
+```
+
+
+```{r}
+library("dbmss")
+# Simplification of marks
+marks(paracou16)<- paracou16$marks
+par(mfrow=c(1,2))
+# Calculation of K intertypes for the trees of species "Q.Rosea" around those of species "Q. Rosea"
+plot(Kcross(paracou16, "Other", "Q. Rosea", correction="isotropic"),
+legend=FALSE, main=NULL)
+plot(Kcross(paracou16, "V. Americana", "Other", correction="isotropic"),
+legend=FALSE, main=NULL)
+```
+
+
+#### D function
+```{r}
+Ddat = as.wmppp(win.cross.13)
+
+RipD = Dhat(Ddat, Cases = "a", Controls = "b")
+RipD2 = Dhat(Ddat, Cases = "c", Controls = "b")
+RipD3 = Dhat(Ddat, Cases = "a", Controls = "")
+
+
+par(mfrow = c(1,3))
+plot(RipD3, col = "red", type = "l")
+plot(RipD2, col = "red", type = "l")
+plot(RipD, col = "red", type = "l")
+```
+
+
+#### M intertype function
+```{r}
+Ddat = as.wmppp(win.cross.13)
+
+RipM = Mhat(Ddat, ReferenceType  = "a", NeighborType =  "b")
+RipM2 = Mhat(Ddat,ReferenceType  = "c", NeighborType =  "b")
+RipM3 = Mhat(Ddat, ReferenceType  = "a", NeighborType =  "c")
+
+
+par(mfrow = c(1,3))
+plot(RipM3, col = "red", type = "l")
+plot(RipM2, col = "red", type = "l")
+plot(RipM, col = "red", type = "l")
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

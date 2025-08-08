@@ -1,0 +1,436 @@
+---
+title: "hospot_shape"
+output: pdf_document
+date: "2025-04-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## general
+```{r}
+# retrieve basic functions for contours and center/scaling
+source("hotspot_functions.R")
+
+## libraries
+library(dplyr)
+library(ggplot2)
+library(lidaRtRee)
+library(sf)
+library(purrr)
+library(sdcSpatial)
+library("tigers")
+library(sp)
+library(raster)
+
+## data
+set.seed(1)
+df.original <- base::data.frame(x = c(abs(rnorm(200)), abs(rnorm(200,4))), y = c(abs(rnorm(200)), abs(rnorm(200,4))))
+df.safe = mask_random(df.original, r = 0.5)
+
+plot(df.original);points(df.safe, col = "red")
+```
+
+Now using the unbounded hotspots function
+```{r}
+og.hs = unbounded_hotspots(df.original, minimum = 0.05)
+sf.hs = unbounded_hotspots(df.safe, minimum = 0.05)
+
+plot(og.hs$geometry, axes = TRUE, col = "blue")              # the original hotspots
+plot(sf.hs$geometry, axes = TRUE, add = TRUE, col = "green") # the safe hotspots
+
+```
+Generally we will compare hotspots (safe and og) based on their proximity to each other. How to do this will come later
+For now take simply the big hotspots to explore the measures first
+```{r}
+og.hs1 = og.hs[1,1]
+sf.hs1 = sf.hs[1,1]
+
+
+plot(og.hs1$geometry, axes = TRUE, col = "blue")              # the original hotspots
+plot(sf.hs1$geometry, axes = TRUE, add = TRUE, col = "green") # the safe hotspots
+```
+
+## symmetric difference
+```{r}
+sc.og.hs = scale.center.poly(og.hs1$geometry)
+sc.sf.hs = scale.center.poly(sf.hs1$geometry)
+symdiff1 = st_sym_difference(sc.og.hs, sc.sf.hs)
+
+plot(sc.og.hs, axes = TRUE, col = "blue")              # the original hotspots
+plot(sc.sf.hs, axes = TRUE, add = TRUE, col = "green") # the safe hotspots
+plot(symdiff1, add = TRUE, col = "red")
+
+# the to calculate the area of the symmetric difference
+st_area(symdiff1)
+```
+
+## Hausdorff distance
+https://rdrr.io/cran/tigers/man/HausdorffDistance.html
+```{r}
+library("tigers")
+
+points.og1 = st_cast(sc.og.hs, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+points.sf1 = st_cast(sc.sf.hs, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+
+# does not give the answer
+HausdorffDistance(points.og1, points.sf1, directed = FALSE)
+
+```
+FINAL VERSION
+we know this works at least in the right way and it is still widely available so going with this Hausdorff distance from tigers
+```{r}
+A = rbind(c(0,0), c(4,0), c(0,2))
+B = rbind(c(2,2), c(6,4), c(2,4))
+
+HausdorffDistance <- function(A, B, directed = FALSE)
+{
+    s <- 1:nrow(A)
+    D <- as.matrix(dist(rbind(A, B)))
+    D <- D[s, -s]
+    h <- max(apply(D, 1, min))
+    if (directed) return(h)
+    max(h, apply(D, 2, min))
+}
+
+HausdorffDistance(A,B)
+```
+
+
+## Frechet distance
+Based on an existing function, but we have two things to take into account:
+- we need to pick as starting points the point closest to each other (as specified), could be solved by changing the input
+- going clockwise from both point sets, also be solved by changing the input
+
+```{r}
+## first we calculate the starting points
+###### first starting point
+first_starting_point = function(C, D, first = c(0,0)){
+    
+  all_points = as.data.frame(cbind(rbind(C,D), group = as.factor(c(rep("C", nrow(C)), rep("D", nrow(D)))))) # include and indicator from which polygon they are
+  all_points = all_points[!duplicated(all_points[,1:2]),]
+    
+  # find distance to origin 
+  all_points$dist2origin = sqrt((all_points[,1] - first[1])^2 + (all_points[,2] - first[2])^2)
+  
+  # find the points that are closest to the origin (could be multiple from the same group and from different groups)
+  closest2origin = all_points %>% filter(dist2origin == min(dist2origin)) 
+
+  # if we have more than one row we calculate the minimal distance of those points to the other group
+  if (nrow(closest2origin) == 1) start1 = closest2origin 
+  else {
+    closest2origin$dist2other = apply(closest2origin, 1, function(x) {
+      other_group = all_points[all_points$group != as.numeric(x[3]),] # define other group
+      min(sqrt((x[1] - other_group[,1])^2 + (x[2]- other_group[,2])^2))}) # minimal distance to other group
+    
+    closest2other = closest2origin %>% filter(dist2other == min(dist2other)) 
+
+    if (nrow(closest2other) == 1) start1 = closest2other 
+    else {
+      smallest.x = closest2other[which(closest2other$V1 == min(closest2other$V1)), ]
+      
+      if(nrow(smallest.x) == 1) start1 = smallest.x 
+      else start1 = closest2other[which(smallest.x$V2 == min(smallest.x$V2)), ]
+    }
+  }
+  
+  return(start1)
+  
+}
+
+##### second starting point
+second_starting_point = function(C,D,start) {
+  
+  all_points = as.data.frame(cbind(rbind(C,D), group = as.factor(c(rep("C", nrow(C)), rep("D", nrow(D)))))) # include and indicator from which polygon they are
+  all_points = all_points[!duplicated(all_points[,1:2]),]
+  relevant_points = all_points %>% filter(group != start$group)
+
+  # if the first starting point also occurs in the other group this is automatically the second starting point
+  if(nrow(merge(data.frame(start[,1:2]), relevant_points[,1:2]))>0) start2 = start
+  else {
+    relevant_points$dist2start = sqrt((relevant_points[,1] - start[1,1])^2 + (relevant_points[,2] - start[1,2])^2)
+    closest2start = relevant_points %>% filter(dist2start == min(dist2start)) 
+    
+    if (nrow(closest2start) == 1) start2 = closest2start 
+    else {
+      closest2start$dist2other = apply(closest2start, 1, function(x) {
+        other_group = all_points[all_points$group != as.numeric(x[3]),] # define other group
+        min(sqrt((x[1] - other_group[,1])^2 + (x[2]- other_group[,2])^2))}) # minimal distance to other group
+      
+      closest2other = closest2start %>% filter(dist2other == min(dist2other)) 
+  
+      if (nrow(closest2other) == 1) start2 = closest2other 
+      else {
+        smallest.x = closest2other[which(closest2other$V1 == min(closest2other$V1)), ]
+        
+        if(nrow(smallest.x) == 1) start2 = smallest.x 
+        else start2 = closest2other[which(smallest.x$V2 == min(smallest.x$V2)), ]
+      }
+    }    
+    
+  }
+  
+  return(start2)
+}
+
+
+#### rotate to clockwise if necessary
+is_clockwise <- function(x, y) {
+  n <- length(x)
+  x_next <- c(x[-1], x[1])
+  y_next <- c(y[-1], y[1])
+  area <- sum(x * y_next - x_next * y)
+  return(area < 0)
+}
+
+make_clockwise = function(coordinates){
+  # check direction and change if needed
+  direction = is_clockwise(coordinates[,1], coordinates[,2])
+  
+  if(!direction) return(coordinates[nrow(coordinates):1, ])
+  else return(coordinates)
+  
+}
+
+
+### actual calculating of the frechet distance
+compute_frechet_matrix <- function(P, Q) {
+  m <- nrow(P)
+  n <- nrow(Q)
+  D <- matrix(0, nrow = m, ncol = n)
+  
+  for (i in 1:m) {
+    for (j in 1:n) {
+      d <- euclidean(P[i, ], Q[j, ])
+      if (i == 1 && j == 1) {
+        D[i, j] <- d
+      } else if (i == 1) {
+        D[i, j] <- max(D[i, j - 1], d)
+      } else if (j == 1) {
+        D[i, j] <- max(D[i - 1, j], d)
+      } else {
+        D[i, j] <- max(min(D[i - 1, j], D[i - 1, j - 1], D[i, j - 1]), d)
+      }
+    }
+  }
+  
+  return(D)
+  
+}
+```
+
+```{r}
+C <- matrix(c((c(-1,-2,1.5,2,-1) %>% rev()),(c(-1,2,1.5,-2,-1) %>% rev())), ncol = 2, byrow = FALSE)
+D <- matrix(2*c(-0.5,-0.75,-2,.5,2,-.5,
+                -0.75,-0.5,2,.5,-2,-.75), ncol = 2, byrow = FALSE)
+
+calc_frechet_distance = function(C,D){
+  # remove duplicates
+  C = C[!duplicated(C),]
+  D = D[!duplicated(D),]
+  
+  firsths = first_starting_point(C,D)
+  secondhs = second_starting_point(C,D,firsths)
+  
+  Cstart = which(C[,1] == firsths[,1] & C[,2] == firsths[,2])
+  Dstart = which(D[,1] == secondhs[,1] & D[,2] == secondhs[,2])
+  
+  Corder = rbind(C[Cstart:nrow(C),], C[1:Cstart,])
+  Dorder = rbind(D[Dstart:nrow(D),], D[1:Dstart,])
+  
+  Crotate = make_clockwise(Corder)
+  Drotate = make_clockwise(Dorder)
+  
+  fm = compute_frechet_matrix(Crotate, Drotate)
+  frechet_distance <- fm[nrow(Crotate), nrow(Drotate)]
+  
+  return(frechet_distance)
+}
+
+calc_frechet_distance(C,D)
+
+# if rotate/mirror first then frechet existing function can be used
+#C = st_polygon(list(Crotate))
+#D = st_polygon(list(Drotate))
+#st_distance(C,D, which= "Frechet")
+
+```
+
+
+## box-counting dimension
+```{r}
+box_count_func = function(eps, poly) {
+
+  bb33 = st_bbox(scale.center.poly(poly))
+  bbsize = max(abs(bb33 - 0))
+  r <- raster(nrows=1*eps, ncol=1*eps, xmn=-bbsize, ymn=-bbsize, xmx = bbsize, ymx = bbsize)
+  vals <- seq(1:length(r))
+  
+  r2 = st_as_sf(rasterToPolygons(r))
+
+  inter2 = st_overlaps(poly, sf::st_set_crs(r2, st_crs(poly)), byid = TRUE)
+  ind = inter2[[1]]
+  
+  
+  values(r) = NA
+  values(r)[ind] = vals[ind]
+  
+  plot(r)
+  plot(poly, add = TRUE)
+
+  return(list("boxes" = length(ind),
+              "size" = 2*bbsize / eps,
+              "eps" = eps))
+  
+  
+}
+
+bc1 = box_count_func(5,scale.center.poly(og.hs[1,]$geometry))
+
+
+```
+
+```{r}
+bc2 = sapply(1:100, function(x) box_count_func(x,scale.center.poly(og.hs[1,]$geometry)))
+
+
+
+```
+```{r}
+bc3 = sapply(1:100, function(x) box_count_func(x,scale.center.poly(sf.hs[1,]$geometry)))
+```
+
+
+```{r}
+num = sapply(bc2[1,], log) 
+denom = sapply(bc2[3,], function(x) log(1/x)) 
+bcdim = num/denom
+
+num2 = sapply(bc3[1,], log) 
+denom2 = sapply(bc3[3,], function(x) log(1/x)) 
+bcdim2 = num2/denom2
+
+plot(as.vector(bc2[3,]),bcdim, type = "l", col = "blue")
+lines(as.vector(bc3[3,]),bcdim2, col = "red")
+
+```
+
+
+### Angle measure (ONLY FOR GRIDS!!!!)
+AND NO SCALING!!!
+```{r}
+
+map_original = sdc_raster(dwellings[,1:2], dwellings$consumption)
+map_safe = protect_smooth(map_original)
+
+dat_original = raster::as.matrix(map_original$value$mean); dat_original[is.na(dat_original)] = 0
+dat_safe = raster::as.matrix(map_safe$value$mean); dat_safe[is.na(dat_safe)] = 0
+
+
+gridsf = grid_hotspot(dat_safe, 5000)
+gridog = grid_hotspot(dat_original, 5000)
+
+
+gridsf2 = st_as_sf(gridsf[1,])
+gridog2 = st_as_sf(gridog[1,])
+
+sgrid2 = scale.center.poly(gridsf2$geometry)
+ogrid2 = scale.center.poly(gridog2$geometry)
+
+plot(ogrid2, axes = TRUE, col = "blue")              # the original hotspots
+plot(sgrid2, axes = TRUE, add = TRUE, col = "green") # the safe hotspots
+
+
+plot(gridog2, axes = TRUE, col = "blue")              # the safe hotspots
+plot(gridog2, axes = TRUE, add = TRUE, col = "green") # the og hotspots
+
+```
+
+```{r}
+number_angels = function(hotspot){
+  ogco = st_coordinates(st_cast(hotspot, "POLYGON"))
+  changedf = data.frame(
+  x = c(diff(ogco[,1]),diff(ogco[,1])[1]),
+  y = c(diff(ogco[,2]),diff(ogco[,2])[1]))
+
+
+  sum(diff(changedf$x) != 0 & diff(changedf$y) != 0)
+}
+
+
+angle_measure = function(safe, original){
+  area_safe = st_area(safe)
+  area_og = st_area(original)
+  
+  angles_safe = number_angels(safe)
+  angles_og = number_angels(original)
+    
+  (angles_safe * area_og) / (angles_og * area_safe)
+}
+
+
+angle_measure(gridsf2, gridog2)
+
+
+```
+
+
+##### Correlation dimension
+```{r}
+corr_integral = function(x, eps){
+  N = nrow(x)
+  
+  heavyside = sum((eps - dist(x)) > 0)
+  
+  (1/(N*(N-1))) * heavyside
+  
+}
+
+
+corr_dimension_func = function(n, polygon, step = 0.01){
+  sampledpoly = st_sample(polygon, n)
+  sampled = st_cast(sampledpoly, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+  epsis = seq(0,max(dist(sampled)), step)
+  Ce = sapply(epsis, function(eps) corr_integral(sampled,eps))
+
+  return(list(
+    "eps" = epsis,
+    "C(e)" = Ce
+  ))
+}
+
+ogcorr = corr_dimension_func(300,sc.og.hs)
+sfcorr = corr_dimension_func(300,sc.sf.hs)
+
+plot(log(ogcorr$eps), log(ogcorr$`C(e)`), type = "l", col = "blue")
+lines(log(sfcorr$eps), log(sfcorr$`C(e)`), type = "l", col = "red")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

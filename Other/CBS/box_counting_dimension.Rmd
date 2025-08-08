@@ -1,0 +1,547 @@
+---
+title: "box counting"
+output: html_document
+date: "2025-04-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+```{r}
+library("VoxR")
+
+```
+
+this works on the points, but we need it to work on a polygon
+```{r}
+box_counting(dfb,0.01, store_fit = TRUE)
+
+
+dfb = cbind(as.data.frame(D), rep(0, nrow(D)))
+
+
+round(0.123)
+
+temp = data.frame(NA,NA) ; temp=temp[-1,] ; names(temp) = c("res","N")
+```
+
+
+
+## functions do not seem be for polygons (only for points themselves)
+https://stackoverflow.com/questions/40658173/portion-of-a-raster-cell-covered-by-one-or-more-polygons-is-there-a-faster-way
+```{r}
+library(sp)
+library(raster)
+library(rgeos)
+# create example raster
+r <- raster(nrows=10, ncol=15, xmn=0, ymn=0)
+values(r) <- sample(x=1:1000, size=150)
+
+# create example (Spatial) Polygons
+p1 <- Polygon(coords=matrix(c(50, 100, 100, 50, 50, 15, 15, 35, 35, 15), nrow=5, ncol=2), hole=FALSE)
+p2 <- Polygon(coords=matrix(c(77, 123, 111, 77, 43, 57, 66, 43), nrow=4, ncol=2), hole=FALSE)
+p3 <- Polygon(coords=matrix(c(110, 125, 125, 110, 67, 75, 80, 67), nrow=4, ncol=2), hole=FALSE)
+
+lots.of.polygons <- SpatialPolygons(list(Polygons(list(p1, p2, p3), 1)))
+crs(lots.of.polygons) <- crs(r) # copy crs from raster to polygons (please ignore any potential problems related to projections etc. for now)
+
+
+# plot both
+plot(r) #values in this raster for illustration purposes only
+plot(lots.of.polygons, add=TRUE)
+# empty the example raster (don't need the values):
+values(r) <- NA
+
+# copy of r that will hold the results
+r.results <- r
+
+for (i in 1:ncell(r)){
+  r.cell <- r # fresh copy of the empty raster
+  r.cell[i] <- 1 # set the ith cell to 1
+  p <- rasterToPolygons(r.cell) # create a polygon that represents the i-th raster cell
+  cropped.polygons <- rgeos:: gIntersection(p, lots.of.polygons) # intersection of i-th raster cell and all SpatialPolygons
+
+  if (is.null(cropped.polygons)) {
+    r.results[i] <- NA # if there's no polygon intersecting this raster cell, just return NA ...
+  } else{
+    r.results[i] <- gArea(cropped.polygons) # ... otherwise return the area
+  }
+}
+
+values(r.results)
+
+plot(r.results)
+plot(lots.of.polygons, add=TRUE)
+
+r <- raster(nrows=10, ncol=15, xmn=0, ymn=0)
+set.seed(1); values(r) <- sample(x=1:1000, size=150)
+rr <- rasterToPolygons(r)
+
+# joining intersecting polys and put all polys into single SpatialPolygons
+lots.of.polygons <- gUnaryUnion(lots.of.polygons)   # in this example, it is unnecessary
+
+gi <- gIntersection(rr, lots.of.polygons, byid = T)
+
+ind <- as.numeric(do.call(rbind, strsplit(names(gi), " "))[,1])   # getting intersected rr's id
+r[] <- NA
+r[ind] <- sapply(gi@polygons, function(x) slot(x, 'area'))  # a bit faster than gArea(gi, byid = T)
+
+plot(r)
+plot(lots.of.polygons, add=TRUE)
+
+
+
+
+
+terra::extract(r, lots.of.polygons)
+```
+```{r}
+
+poly1 = matrix(c(
+  50, 5,
+  100, 5,
+  100,20,
+  50,20,
+  50, 5
+), ncol = 2, byrow = TRUE
+)
+
+lin = terra::as.lines(terra::vect(poly1))
+lin2 = Lines(poly1)
+
+ra = terra::rast(r)
+
+st_intersection(lin,ra)
+
+plot(r)
+plot(lin, add = TRUE)
+```
+
+
+
+#### found another package
+https://cran.r-project.org/web/packages/fractD/vignettes/Calculates_the_fractal_dimension_of_2D_and_3D_images.html
+```{r}
+
+library("fractD")
+fct2D <- fract2D(dir = "examples/source.dir", box.size = c(1,2,4,8,16,32,64,128,256,512))
+
+
+?fract2D
+
+
+
+library("yacas")
+
+
+x = Ryacas::ysym("x")
+lim(sin(x), x , 0)
+
+plot(sin(1:100))
+
+yacas("Limit(n,Infinity)(1+(1/n))^n")
+```
+
+#### didn't work, how about the advice to just use a for loop somehow
+https://stats.stackexchange.com/questions/5563/is-there-a-limit-function-in-r
+```{r}
+
+
+
+
+```
+
+
+
+
+#### trying first example but with lines
+```{r}
+# create example raster
+r <- raster(nrows=10, ncol=15, xmn=0, ymn=0)
+values(r) <- sample(x=1:1000, size=150)
+
+# create example (Spatial) Polygons
+p1 <- Polygon(coords=matrix(c(50, 100, 100, 50, 50, 15, 15, 35, 35, 15), nrow=5, ncol=2), hole=FALSE)
+p2 <- Polygon(coords=matrix(c(77, 123, 111, 77, 43, 57, 66, 43), nrow=4, ncol=2), hole=FALSE)
+p3 <- Polygon(coords=matrix(c(110, 125, 125, 110, 67, 75, 80, 67), nrow=4, ncol=2), hole=FALSE)
+
+
+l1 = st_linestring(matrix(c(50, 100, 100, 50, 50, 15, 15, 35, 35, 15), nrow=5, ncol=2))
+crs(r) <- NA
+
+
+l1 = Line(cbind(c(50, 100, 100, 50, 50), c(15, 15, 35, 35, 15)))
+l2 = Line(cbind(c(77, 123, 111, 77), c(43, 57, 66, 43)))
+
+
+ll1 = Lines(list(l1, l2), ID = "a")
+sl1 = SpatialLines(list(ll1))
+SpatialLinesDataFrame(data = sl1)
+
+int1 = gIntersection(sl1, r))
+plot(int1)
+
+
+raster::intersect(sl1, r)  
+  
+gIntersection(rasterToPolygons(r[1]), l1)
+
+
+
+
+
+lots.of.polygons <- SpatialPolygons(list(Polygons(list(p1, p2, p3), 1)))
+crs(lots.of.polygons) <- crs(r) # copy crs from raster to polygons (please ignore any potential problems related to projections etc. for now)
+
+
+# plot both
+plot(r) #values in this raster for illustration purposes only
+plot(lots.of.polygons, add=TRUE)
+# empty the example raster (don't need the values):
+values(r) <- NA
+
+# copy of r that will hold the results
+r.results <- r
+
+for (i in 1:ncell(r)){
+  r.cell <- r # fresh copy of the empty raster
+  r.cell[i] <- 1 # set the ith cell to 1
+  p <- rasterToPolygons(r.cell) # create a polygon that represents the i-th raster cell
+  cropped.polygons <- rgeos:: gIntersection(p, lots.of.polygons) # intersection of i-th raster cell and all SpatialPolygons
+
+  if (is.null(cropped.polygons)) {
+    r.results[i] <- NA # if there's no polygon intersecting this raster cell, just return NA ...
+  } else{
+    r.results[i] <- gArea(cropped.polygons) # ... otherwise return the area
+  }
+}
+
+plot(r.results)
+plot(lots.of.polygons, add=TRUE)
+```
+
+
+##### another try
+```{r}
+
+# create example (Spatial) Polygons
+p1 <- Polygon(coords=matrix(c(50, 100, 100, 50, 50, 15, 15, 35, 35, 15), nrow=5, ncol=2), hole=FALSE)
+p2 <- Polygon(coords=matrix(c(77, 123, 111, 77, 43, 57, 66, 43), nrow=4, ncol=2), hole=FALSE)
+p3 <- Polygon(coords=matrix(c(110, 125, 125, 110, 67, 75, 80, 67), nrow=4, ncol=2), hole=FALSE)
+
+lots.of.polygons <- SpatialPolygons(list(Polygons(list(p1, p2, p3), 1)))
+
+
+r <- raster(nrows=10, ncol=15, xmn=0, ymn=0)
+set.seed(1); values(r) <- rep(1, 10*15)
+rr <- rasterToPolygons(r)
+crs(r) <- NA
+
+# joining intersecting polys and put all polys into single SpatialPolygons
+#lots.of.polygons <- gUnaryUnion(lots.of.polygons)   # in this example, it is unnecessary
+
+gi <- gIntersection(rr, lots.of.polygons, byid = TRUE)
+nrow(coordinates(gi))
+
+ind <- as.numeric(do.call(rbind, strsplit(names(gi), " "))[,1])   # getting intersected rr's id
+r[] <- NA
+r[ind] <- sapply(gi@polygons, function(x) slot(x, 'area'))  # a bit faster than gArea(gi, byid = T)
+
+plot(r, asp = 1)
+plot(lots.of.polygons, add=TRUE)
+
+matrix(values(r), ncol = 15, nrow = 10, byrow = TRUE)
+
+
+plot(gi)
+
+
+length(ind)
+
+bbox(lots.of.polygons)
+r = raster(nrows=10, ncol=10, xmn=15, ymn=15, ymx = 125, xmx=125)
+```
+
+now with smaller grids
+```{r}
+p1 <- Polygon(coords=matrix(c(50, 100, 100, 50, 50, 15, 15, 35, 35, 15), nrow=5, ncol=2), hole=FALSE)
+p2 <- Polygon(coords=matrix(c(77, 123, 111, 77, 43, 57, 66, 43), nrow=4, ncol=2), hole=FALSE)
+p3 <- Polygon(coords=matrix(c(110, 125, 125, 110, 67, 75, 80, 67), nrow=4, ncol=2), hole=FALSE)
+
+lots.of.polygons <- SpatialPolygons(list(Polygons(list(p1), 1)))
+size = 4
+
+r <- raster(nrows=10*size, ncol=15*size, xmn=0, ymn=0)
+set.seed(1); values(r) <- rep(1, 10*15*size*size)
+rr <- rasterToPolygons(r)
+crs(r) <- NA
+
+# joining intersecting polys and put all polys into single SpatialPolygons
+lots.of.polygons <- gUnaryUnion(lots.of.polygons)   # in this example, it is unnecessary
+lots.of.polygons@polygons
+gi <- gIntersection(rr, lots.of.polygons, byid = TRUE)
+nrow(coordinates(gi))
+
+
+ind <- as.numeric(do.call(rbind, strsplit(names(gi), " "))[,1])   # getting intersected rr's id
+r[] <- NA
+r[ind] <- sapply(gi@polygons, function(x) slot(x, 'area'))  # a bit faster than gArea(gi, byid = T)
+
+plot(r)
+plot(lots.of.polygons, add=TRUE)
+
+
+
+plot(gi)
+nrow(coordinates(gi@polyobj))
+plot(coordinates(gi))
+
+gi@polyobj
+
+
+gi@polygons
+```
+
+now make it into a for loop, which works
+```{r}
+raster_overlap = function(size) {
+  r <- raster(nrows=10*size, ncol=10*size, xmn=0, ymn=0)
+  set.seed(1); values(r) <- rep(1, 10*10*size*size)
+  rr <- rasterToPolygons(r)
+  
+  # joining intersecting polys and put all polys into single SpatialPolygons
+  #lots.of.polygons <- gUnaryUnion(lots.of.polygons)   # in this example, it is unnecessary
+  
+  gi <- gIntersection(rr, lots.of.polygons, byid = TRUE)
+  
+  if(class(gi) == "SpatialCollections") result = gi@polyobj
+  else result = gi
+  
+  return((coordinates(result)))
+}
+
+
+boxes = list()
+i = 1
+for (size in c(1,2,4,8)) {
+  boxes[[i]] = raster_overlap(size)
+  i = i+1
+}
+
+plot(boxes,c(1,2,4,8), type = "b")
+
+plot(boxes[[4]])
+```
+
+two things to fix:
+- bounding box
+- not using  grids inside the filled
+
+#### first not using the inner grids
+```{r}
+og.hs = unbounded_hotspots(df.original, minimum = 0.05)
+bcd1 = og.hs[1,]$geometry
+plot(bcd1)
+
+
+lots.of.polygons <- SpatialPolygons(list(Polygons(list(p1), 1)))
+size = 4
+
+r <- raster(nrows=10*size, ncol=15*size, xmn=0, ymn=0)
+set.seed(1); values(r) <- rep(1, 10*15*size*size)
+rr <- rasterToPolygons(r)
+crs(r) <- NA
+
+# joining intersecting polys and put all polys into single SpatialPolygons
+lots.of.polygons <- gUnaryUnion(lots.of.polygons)   # in this example, it is unnecessary
+lots.of.polygons@polygons
+gi <- gIntersection(rr, lots.of.polygons, byid = TRUE)
+nrow(coordinates(gi))
+
+st_covered_by()
+
+crs(rr) = crs(og.hs[1,])
+inter = st_intersection(og.hs[1,], st_as_sf(rr))
+inter$geometry
+
+plot(inter$geometry)
+
+p33 = st_polygon(list(cbind(c(77, 123, 111, 77), c(43, 57, 66, 43))))
+inter2 = st_overlaps(p33, st_as_sf(rr), byid = TRUE)
+
+st_coordinates(inter2[[1]])
+
+ind = inter2[[1]]
+plot(inter2, add = TRUE)
+
+rr[] <- NA
+rr[ind] <- sapply(p33, function(x) slot(x, 'area'))  # a bit faster than gArea(gi, byid = T)
+
+r <- NA
+r[ind] <- st_area(p33, byid = TRUE)
+
+plot(r)
+
+vals = ifelse(1:2400 %in% ind, 1, 0)
+values(r) <- vals
+
+```
+
+this flow WORKS!
+```{r}
+r <- raster(nrows=10*size, ncol=15*size, xmn=0, ymn=0)
+p33 = st_polygon(list(cbind(c(77, 123, 111, 77), c(43, 57, 66, 43))))
+#p33 = scale.center.poly(p33)
+inter2 = st_overlaps(p33, st_as_sf(rr), byid = TRUE)
+ind = inter2[[1]]
+vals = ifelse(1:2400 %in% ind, 1, 0)
+values(r) <- vals
+
+plot(r)
+
+
+
+```
+
+now to fix the bounding box
+https://rdrr.io/cran/VoxR/src/R/Box_counting.R 
+```{r}
+library(raster)
+
+bb33 = st_bbox(scale.center.poly(p33))
+bbsize = max(abs(as.numeric(bb33[3] - bb33[1])), abs(as.numeric(bb33[4] - bb33[2]))) # calculate size of the bounding box
+bbcenter = c(as.numeric(bb33[3] + bb33[1])/2, as.numeric(bb33[4] + bb33[2])/2)
+
+eps = 32
+r <- raster(nrows=1*eps, ncol=1*eps, xmn=-bbsize, ymn=-bbsize, xmx = bbsize, ymx = bbsize)
+values(r) <- seq(1:length(r))
+
+p33 = st_polygon(list(cbind(c(77, 123, 111, 77), c(43, 57, 66, 43))))
+p33 = scale.center.poly(p33)
+inter2 = st_overlaps(p33, st_as_sf(rasterToPolygons(r)), byid = TRUE)
+ind = inter2[[1]]
+
+
+values(r) = NA
+values(r)[ind] = 1
+
+plot(r)
+plot(p33, add = TRUE)
+
+
+```
+
+
+NICE, now we need to make a plot of the number of boxes, but first a function
+```{r}
+box_count_func = function(eps, poly) {
+
+  bb33 = st_bbox(scale.center.poly(poly))
+  bbsize = max(abs(bb33 - 0))
+  r <- raster(nrows=1*eps, ncol=1*eps, xmn=-bbsize, ymn=-bbsize, xmx = bbsize, ymx = bbsize)
+  vals <- seq(1:length(r))
+  
+  r2 = st_as_sf(rasterToPolygons(r))
+
+  inter2 = st_overlaps(poly, sf::st_set_crs(r2, st_crs(poly)), byid = TRUE)
+  ind = inter2[[1]]
+  
+  
+  values(r) = NA
+  values(r)[ind] = vals[ind]
+  
+  plot(r)
+  plot(poly, add = TRUE)
+
+  return(length(ind))
+  
+  
+}
+
+box_count_func(16,scale.center.poly(og.hs[1,]$geometry))
+
+
+0.5837532/8
+```
+
+
+```{r}
+p33 = scale.center.poly( og.hs[1,]$geometry)
+st_set_crs(p33, NA) 
+
+bb33 = st_bbox(scale.center.poly(p33))
+#bbsize = max(abs(as.numeric(bb33[3] - bb33[1])), abs(as.numeric(bb33[4] - bb33[2]))) # calculate size of the bounding box
+bbsize = max(abs(bb33 - 0)) # calculate size of the bounding box
+
+
+bbcenter = c(as.numeric(bb33[3] + bb33[1])/2, as.numeric(bb33[4] + bb33[2])/2)
+
+eps = 16
+#r <- raster(nrows=1*eps, ncol=1*eps, xmn=-bbsize*.5+bbcenter[1], ymn=-bbsize*.5+bbcenter[2], xmx = bbsize*.5+bbcenter[1], ymx = bbsize*.5+bbcenter[2])
+r <- raster(nrows=1*eps, ncol=1*eps, xmn=-bbsize, ymn=-bbsize , xmx = bbsize , ymx = bbsize)
+
+vals <- seq(1:length(r))
+#p33 = st_polygon(list(cbind(c(77, 123, 111, 77), c(43, 57, 66, 43))))
+#p33 = scale.center.poly(p33)
+
+
+r2 = st_as_sf(rasterToPolygons(r))
+#r2 = r2$geometry
+
+
+inter2 = st_overlaps(p33, sf::st_set_crs(r2, st_crs(p33)), byid = TRUE)
+ind = inter2[[1]]
+
+
+values(r) = NA
+values(r)[ind] = vals[ind]
+
+values(r) <- 1
+my_win = extent( -0.2,0.2,0.56,0.6)
+plot(my_win, col = NA)
+plot(r, ylim = c(-2, 2), add = TRUE)
+plot(p33, add = TRUE)
+
+
+bb33[1] - bb33[3] == bb33[2] - bb33[4]
+
+2*bbsize*.5+bbcenter[2]
+
+dim(og.hs[1,]$geometry)
+
+schs = scale.center.poly(og.hs[1,]$geometry)
+
+ xmin: -0.5464763 ymin: -0.560379 xmax: 0.5747041 ymax: 0.5837532
+
+0.5464763 + 0.5747041
+
+
+(bb33[1] - bbcenter[1])
+bb33[2] - bbcenter[2]
+bb33[3] - bbcenter[1]
+bb33[4] - bbcenter[2]
+
+
+abs(bb33 - 0)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

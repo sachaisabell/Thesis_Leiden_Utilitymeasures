@@ -1,0 +1,296 @@
+---
+title: "Spatial (auto) correlation&clustering"
+output: pdf_document
+date: "2025-03-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# General
+```{r}
+library(sdcSpatial)
+```
+
+## Defining maps and plotting
+Here using the SDC technique smoothing.
+And assuming that any NA values amount to 0.
+```{r}
+# the maps
+map_original = sdc_raster(dwellings[,1:2], dwellings$consumption)
+map_safe = protect_smooth(map_original)
+
+# the plots
+mfrow = c(1,2)
+plot(map_original)
+plot(map_safe)
+
+# the data
+## turning raster into matrices
+dat_original = raster::as.matrix(map_original$value$mean); dat_original[is.na(dat_original)] = 0
+dat_safe = raster::as.matrix(map_safe$value$mean); dat_safe[is.na(dat_safe)] = 0
+```
+
+
+# Utility measures
+## VMR (comparison before/after)
+Note that if we apply this we have to make a choice on which data we use. Do we include the null counts as well.
+Using the example from the guidelines, we include the zeros as well, so using the raster data.
+```{r}
+
+VMR_function = function(original, safe){
+  VMR.og = var(c(original))/mean(c(original))
+  VMR.safe = var(c(safe))/mean(c(safe))
+  
+  VMR.og - VMR.safe
+}
+
+VMR_function(dat_original, dat_safe)
+```
+
+## MMR varieties
+```{r}
+MMR_function = function(original, safe, option = "MMR", pure = TRUE){
+  # calculate median beforehand
+  Med = c(median(c(original)),median(c(safe)))
+
+  # use corrected median if asked for, or if either median is 0
+  if (pure == FALSE) Med = Med + c(1/length(c(original)), 1/length(safe)) * c(min(original[original != 0]), min(safe[safe != 0]))
+  
+  if(0 %in% Med == TRUE){
+    warning("one or both medians are 0, corrected medians are used (pure = FALSE)")
+    return(MMR_function(original, safe, option, pure = FALSE))
+  }
+  
+  
+  ## MMR
+  if (option == "MMR"){
+    MedAD = c(c(median(abs(c(original) - Med[1])), 
+                median(abs(c(safe) - Med[2]))))
+  
+    return(diff(MedAD / Med))
+  }
+  
+  ## MMR*
+  if (option == "MMR*"){
+    MedAD = c(c(median(abs(c(original) - mean(original))), 
+                median(abs(c(safe) - mean(safe)))))
+  
+    return(diff(MedAD / Med))
+  }
+  
+  ## MMR**
+  if (option == "MMR**"){
+    MedAD = c(c(mean(abs(c(original) - Med[1])), 
+                mean(abs(c(safe) - Med[2]))))
+  
+    return(diff(MedAD / Med))
+  }
+}
+
+
+## checking with example from guidelines, arrive at same anwer
+og = c(2,4,4,2,2,3,2,5,4,1,3,4,2,4,2,rep(0,36-15))
+saf = c(3,3,3,3, rep(2,16), rep(0,36-4-16))
+
+MMR_function(og, saf, "MMR")
+MMR_function(og, saf, "MMR*")
+MMR_function(og, saf, "MMR**")
+```
+
+
+## Moran's I / ILM
+classic approach: weights based on neighborhood (either queen or rook), queen recommended due to more usefulness for irregular polygons and reduction of possible inaccuracies
+
+```{r}
+library(ape)
+Moran.I(x, weight)
+
+?sdcMicro
+
+
+
+
+
+```
+
+
+```{r}
+
+
+map_original = sdc_raster(dwellings[,1:2], dwellings$consumption)
+map_safe = protect_smooth(map_original)
+
+# the plots
+mfrow = c(1,2)
+plot(map_original)
+plot(map_safe)
+
+# the data
+## turning raster into matrices
+dat_original = raster::as.matrix(map_safe$value$mean); dat_original[is.na(dat_original)] = 0
+dat_safe = raster::as.matrix(map_original$value$mean); dat_safe[is.na(dat_safe)] = 0
+
+
+## plotting the polygon boundaries
+# this makes sense, we see way less values that are 0 (or NA in the map) for the safe version 
+#(since we use smoothing as the SDC technique)
+polies1 = raster::rasterToPolygons(map_original$value$mean)
+polies2 = raster::rasterToPolygons(map_safe$value$mean)
+
+raster::plot(polies1)
+raster::plot(polies2)
+
+
+## now how to get the neighboring points from this
+library("spdep")
+
+ras = raster::rasterFromCells(map_original$value$mean, c(1:22, 62:84))
+polies.ras = raster::rasterToPolygons(ras)
+nb_q = poly2nb(polies.ras, queen = TRUE)
+
+raster::plot(polies.ras)
+coords <- coordinates(polies.ras)
+plot(polies.ras)
+plot(nb_q, coords, col="grey", add = TRUE)
+
+card(nb_q) # extracting the number of neighbors for each cell
+
+# weight matrix can be binary (yes or no neighbor), based on the distance itself, or the values of a variable
+## BINARY
+nb_q[[1]] # can select for each one which are the neighbors, now need to turn this into a binary matrix
+nb_q[1:3] # extract list
+nb2mat(nb_q, style = "B") # binary weight matrix
+
+```
+
+
+
+```{r}
+
+# starting out with a raster map for iriginal and safe
+map_original = sdc_raster(dwellings[,1:2], dwellings$consumption)
+map_safe = protect_smooth(map_original)
+
+# turning map into a raster and then into neighbors
+original_cells = raster::as.matrix(map_safe$value$mean); original_cells[is.na(original_cells)] = 0
+weight.mat = spdep::cell2nb(nrow(original_cells),ncol(original_cells)) %>% nb2listw( style = "C",zero.policy = TRUE)
+
+spdep::moran.test(c(original_cells), weight.mat)
+spdep::localmoran(c(original_cells), weight.mat)
+
+weight.mat = spdep::cell2nb(nrow(original_cells),ncol(original_cells)) %>% nb2mat()
+
+gl_moran(c(original_cells), (weight.mat))
+
+
+
+
+
+
+```
+
+so final morans I function FOR GRIDS
+```{r}
+# so input here is e.g. map_safe$value$mean (with the nan = 0)
+morans_I_func = function(original, safe, style = c("W","C","B")){
+  
+  original = raster::as.matrix(original); original[is.na(original)] = 0
+  safe = raster::as.matrix(safe); safe[is.na(safe)] = 0
+  
+  original.weights = spdep::cell2nb(nrow(original),ncol(original)) %>% nb2listw(style = style, zero.policy = TRUE)
+  safe.weights = spdep::cell2nb(nrow(safe),ncol(safe)) %>% nb2listw(style = style, zero.policy = TRUE)
+
+  MI.original = spdep::moran.test(c(original), original.weights)
+  MI.safe = spdep::moran.test(c(safe), safe.weights)
+
+  return(c(MI.original, MI.safe))  
+}
+
+
+
+
+local_MI_func = function(original, safe, style = c("W","C","B")){
+  
+  original = original$value$mean
+  safe = safe$value$mean
+
+  
+  original = raster::as.matrix(original); original[is.na(original)] = 0
+  safe = raster::as.matrix(safe); safe[is.na(safe)] = 0
+  
+  original.weights = spdep::cell2nb(nrow(original),ncol(original)) %>% nb2listw(style = style, zero.policy = TRUE)
+  safe.weights = spdep::cell2nb(nrow(safe),ncol(safe)) %>% nb2listw(style = style, zero.policy = TRUE)
+  
+  MI.original = spdep::localmoran(c(original), original.weights)
+  MI.safe = spdep::localmoran(c(safe), safe.weights)
+  
+  return(c(MI.original))#, MI.safe))  
+}
+
+
+
+
+morans_I_func(map_safe$value$mean,map_original$value$mean,"C") # right answer!
+
+local_MI_func(map_safe$value$mean,map_original$value$mean,"C")
+
+local_MI_func(map_safe,map_original,"C", type = "grid")
+
+
+local_MI_func2(provinces_data[-c(20,29,32,34,228)],provinces_data[-c(20,29,32,34,228)],"C", type = "area")
+
+
+provinces_data$values = provinces_data$city_count
+
+
+is.vector(c(provinces_data[-c(20,29,32,34,228)]$values))
+
+localmoran()
+
+provinces_data$values
+
+provinces_data[,ncol(provinces_data)$]
+
+provinces_data[,"values"]$values
+
+is()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

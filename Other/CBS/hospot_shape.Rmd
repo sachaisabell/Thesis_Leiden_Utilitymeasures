@@ -1,0 +1,231 @@
+---
+title: "hospot_shape"
+output: pdf_document
+date: "2025-04-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## general
+```{r}
+# retrieve basic functions for contours and center/scaling
+source("hotspot_functions.R")
+
+## libraries
+library(dplyr)
+library(ggplot2)
+library(lidaRtRee)
+library(sf)
+library(purrr)
+library(sdcSpatial)
+
+## data
+set.seed(1)
+df.original <- data.frame(x = c(abs(rnorm(200)), abs(rnorm(200,4))), y = c(abs(rnorm(200)), abs(rnorm(200,4))))
+df.safe = mask_random(df.original, r = 0.5)
+
+plot(df.original);points(df.safe, col = "red")
+```
+
+Now using the unbounded hotspots function
+```{r}
+og.hs = unbounded_hotspots(df.original, minimum = 0.05)
+sf.hs = unbounded_hotspots(df.safe, minimum = 0.05)
+
+plot(og.hs$geometry, axes = TRUE, col = "blue")              # the original hotspots
+plot(sf.hs$geometry, axes = TRUE, add = TRUE, col = "green") # the safe hotspots
+```
+Generally we will compare hotspots (safe and og) based on their proximity to each other. How to do this will come later
+For now take simply the big hotspots to explore the measures first
+```{r}
+og.hs1 = og.hs[1,1]
+sf.hs1 = sf.hs[1,1]
+
+
+plot(og.hs1$geometry, axes = TRUE, col = "blue")              # the original hotspots
+plot(sf.hs1$geometry, axes = TRUE, add = TRUE, col = "green") # the safe hotspots
+```
+
+## symmetric difference
+```{r}
+sc.og.hs = scale.center.poly(og.hs1$geometry)
+sc.sf.hs = scale.center.poly(sf.hs1$geometry)
+symdiff1 = st_sym_difference(sc.og.hs, sc.sf.hs)
+
+plot(sc.og.hs, axes = TRUE, col = "blue")              # the original hotspots
+plot(sc.sf.hs, axes = TRUE, add = TRUE, col = "green") # the safe hotspots
+plot(symdiff1, add = TRUE, col = "red")
+
+# the to calculate the area of the symmetric difference
+st_area(symdiff1)
+```
+
+## Hausdorff distance
+https://rdrr.io/cran/tigers/man/HausdorffDistance.html
+```{r}
+library("tigers")
+
+points.og1 = st_cast(sc.og.hs, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+points.sf1 = st_cast(sc.sf.hs, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+
+# does not give the answer
+HausdorffDistance(points.og1, points.sf1, directed = FALSE)
+st_distance(sc.og.hs, sc.sf.hs, which = "Hausdorff")
+
+
+## gives the same answer at least
+C = rbind(c(2,1), c(10,2),c(5,2), c(1,2), c(2,1)) %>% list() %>% st_polygon()
+D = rbind(c(0,1), c(10,0), c(0,0), c(0,1)) %>% list() %>% st_polygon()
+
+
+C = rbind(c(0,0), c(4,0), c(0,2), c(0,0)) %>% list() %>% st_polygon()
+D = rbind(c(2,2), c(6,4), c(2,4), c(2,2)) %>% list() %>% st_polygon()
+
+
+CC = st_cast(C, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+DD = st_cast(D, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+
+st_distance(C, D, which = "Frechet")
+HausdorffDistance(CC,DD, directed = FALSE)
+
+sqrt(8)
+5.09902^2 # 26
+2.121326^2 # 4.500024
+
+
+library("rgeos")
+
+p1 = readWKT("POLYGON((0 0, 4 0, 0 2, 0 0))")
+p2 = readWKT("POLYGON((2 2, 6 4, 2 4, 2 2))")
+gDistance(og.hs, sf.hs, hausdorff = TRUE)
+
+
+library("pracma")
+hausdorff_dist(as.matrix(as.data.frame(points.og1)), as.matrix(as.data.frame(points.sf1)))
+
+# https://math.stackexchange.com/questions/5002049/how-to-compute-the-hausdorff-distance-between-two-circles-in-mathbb-r2
+
+
+library("stampr")
+library(sp)
+stamp.distance()
+
+SpatialPolygonsDataFrame(list(as.SpatialPolygons.PolygonsList(sc.og.hs), as.SpatialPolygons.PolygonsList(sc.sf.hs)))
+is(sc.og.hs)
+```
+
+```{r}
+A = rbind(c(0,0), c(4,0), c(0,2))
+B = rbind(c(2,2), c(6,4), c(2,4))
+
+s = 1:nrow(A)
+rbind(A,B)
+D = as.matrix(dist(rbind(A,B)));D
+D[s,-s]
+
+
+HausdorffDistance <- function(A, B, directed = FALSE)
+{
+    s <- 1:nrow(A)
+    D <- as.matrix(dist(rbind(A, B)))
+    D <- D[s, -s]
+    h <- max(apply(D, 1, min))
+    if (directed) return(h)
+    max(h, apply(D, 2, min))
+}
+```
+
+at home tryout
+- first we define the boundaries of the polygons, otherwise we have to rely only on the points that we know
+- then calculate the shortest distance between the two polygons
+```{r}
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Frechet distance
+```{r}
+# example
+
+plot(c(0,10), type = "n", asp = 1)
+plot(C, add = TRUE, border = "blue")
+plot(D, add = TRUE, border = "red")
+
+plot(C)
+
+
+st_distance(sc.og.hs, sc.sf.hs, which = "Frechet", by_element = TRUE)
+
+
+```
+
+```{r}
+b0 = st_polygon(list(rbind(c(-1,-1), c(1,-1), c(1,1), c(-1,1), c(-1,-1))))
+b1 = b0 + 2
+b2 = b0 + c(-0.2, 2)
+
+plot(b0, axes = TRUE, ylim = c(-4,4), asp = 1)
+st_cast(b1, "MULTIPOINT") %>% as("Spatial") %>% coordinates() %>% polygon()
+st_cast(b2, "MULTIPOINT") %>% as("Spatial") %>% coordinates() %>% polygon()
+
+sqrt(2) * 2
+
+sqrt(5)
+
+st_distance(b0, b1, which = "Frechet", by_element = TRUE)
+```
+
+
+## box-counting dimension
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
