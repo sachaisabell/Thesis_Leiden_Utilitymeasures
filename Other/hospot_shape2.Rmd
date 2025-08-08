@@ -1,0 +1,1043 @@
+---
+title: "hospot_shape"
+output: pdf_document
+date: "2025-04-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## general
+```{r}
+# retrieve basic functions for contours and center/scaling
+source("hotspot_functions.R")
+
+## libraries
+library(dplyr)
+library(ggplot2)
+library(lidaRtRee)
+library(sf)
+library(purrr)
+library(sdcSpatial)
+library("tigers")
+library(plyr)
+
+
+## data
+set.seed(1)
+df.original <- data.frame(x = c(abs(rnorm(200)), abs(rnorm(200,4))), y = c(abs(rnorm(200)), abs(rnorm(200,4))))
+df.safe = mask_random(df.original, r = 0.5)
+
+plot(df.original);points(df.safe, col = "red")
+```
+
+Now using the unbounded hotspots function
+```{r}
+og.hs = unbounded_hotspots(df.original, minimum = 0.05)
+sf.hs = unbounded_hotspots(df.safe, minimum = 0.05)
+
+plot(og.hs$geometry, axes = TRUE, col = "blue")              # the original hotspots
+plot(sf.hs$geometry, axes = TRUE, add = TRUE, col = "green") # the safe hotspots
+```
+Generally we will compare hotspots (safe and og) based on their proximity to each other. How to do this will come later
+For now take simply the big hotspots to explore the measures first
+```{r}
+og.hs1 = og.hs[1,1]
+sf.hs1 = sf.hs[1,1]
+
+
+plot(og.hs1$geometry, axes = TRUE, col = "blue")              # the original hotspots
+plot(sf.hs1$geometry, axes = TRUE, add = TRUE, col = "green") # the safe hotspots
+```
+
+## symmetric difference
+```{r}
+sc.og.hs = scale.center.poly(og.hs1$geometry)
+sc.sf.hs = scale.center.poly(sf.hs1$geometry)
+symdiff1 = st_sym_difference(sc.og.hs, sc.sf.hs)
+
+plot(sc.og.hs, axes = TRUE, col = "blue")              # the original hotspots
+plot(sc.sf.hs, axes = TRUE, add = TRUE, col = "green") # the safe hotspots
+plot(symdiff1, add = TRUE, col = "red")
+
+# the to calculate the area of the symmetric difference
+st_area(symdiff1)
+```
+
+## Hausdorff distance
+https://rdrr.io/cran/tigers/man/HausdorffDistance.html
+```{r}
+library("tigers")
+
+points.og1 = st_cast(sc.og.hs, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+points.sf1 = st_cast(sc.sf.hs, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+
+# does not give the answer
+HausdorffDistance(points.og1, points.sf1, directed = FALSE)
+st_distance(sc.og.hs, sc.sf.hs, which = "Hausdorff")
+
+
+## gives the same answer at least
+C = rbind(c(2,1), c(10,2),c(5,2), c(1,2), c(2,1)) %>% list() %>% st_polygon()
+D = rbind(c(0,1), c(10,0), c(0,0), c(0,1)) %>% list() %>% st_polygon()
+
+
+C = rbind(c(0,0), c(4,0), c(0,2), c(0,0)) %>% list() %>% st_polygon()
+D = rbind(c(2,2), c(6,4), c(2,4), c(2,2)) %>% list() %>% st_polygon()
+
+
+CC = st_cast(C, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+DD = st_cast(D, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+
+st_distance(C, D, which = "Frechet")
+HausdorffDistance(CC,DD, directed = FALSE)
+
+sqrt(8)
+5.09902^2 # 26
+2.121326^2 # 4.500024
+
+
+library("rgeos")
+
+p1 = readWKT("POLYGON((0 0, 4 0, 0 2, 0 0))")
+p2 = readWKT("POLYGON((2 2, 6 4, 2 4, 2 2))")
+gDistance(og.hs, sf.hs, hausdorff = TRUE)
+
+
+library("pracma")
+hausdorff_dist(as.matrix(as.data.frame(points.og1)), as.matrix(as.data.frame(points.sf1)))
+
+# https://math.stackexchange.com/questions/5002049/how-to-compute-the-hausdorff-distance-between-two-circles-in-mathbb-r2
+
+
+library("stampr")
+library(sp)
+stamp.distance()
+
+SpatialPolygonsDataFrame(list(as.SpatialPolygons.PolygonsList(sc.og.hs), as.SpatialPolygons.PolygonsList(sc.sf.hs)))
+is(sc.og.hs)
+```
+FINAL VERSION
+we know this works at least in the right way and it is still widely available so going with this Hausdorff distance from tigers
+```{r}
+A = rbind(c(0,0), c(4,0), c(0,2))
+B = rbind(c(2,2), c(6,4), c(2,4))
+
+s = 1:nrow(A)
+rbind(A,B)
+D = as.matrix(dist(rbind(A,B)));D
+D[s,-s]
+
+
+HausdorffDistance <- function(A, B, directed = FALSE)
+{
+    s <- 1:nrow(A)
+    D <- as.matrix(dist(rbind(A, B)))
+    D <- D[s, -s]
+    h <- max(apply(D, 1, min))
+    if (directed) return(h)
+    max(h, apply(D, 2, min))
+}
+
+HausdorffDistance(A,B)
+```
+
+
+
+
+## Frechet distance
+```{r}
+A = st_polygon(list(rbind(c(0,0), c(4,0), c(0,2), c(0,0))))
+B = st_polygon(list(rbind(c(2,2), c(6,4), c(2,4), c(2,2))))
+
+
+st_distance(A, B, which = "Frechet", by_element = TRUE)
+
+
+points.og1 = st_cast(sc.og.hs, "MULTIPOINT") %>% as("Spatial") %>% coordinates() %>% list() %>% st_polygon()
+points.sf1 = st_cast(sc.sf.hs, "MULTIPOINT") %>% as("Spatial") %>% coordinates() %>% list() %>% st_polygon()
+
+st_distance(points.og1, points.sf1, which = "Frechet", by_element = TRUE)
+
+```
+
+```{r}
+# Load required libraries
+library(ggplot2)
+library(gridExtra)
+
+# Define point sets
+A <- matrix(c(0, 0,
+              4, 0,
+              0, 2), ncol = 2, byrow = TRUE)
+
+B <- matrix(c(2, 2,
+              6, 4,
+              2, 4), ncol = 2, byrow = TRUE)
+
+A = st_cast(sc.og.hs, "MULTIPOINT") %>% as("Spatial") %>% coordinates() %>% as.matrix()
+B = st_cast(sc.sf.hs, "MULTIPOINT") %>% as("Spatial") %>% coordinates() %>% as.matrix()
+
+
+
+# Euclidean distance function
+euclidean <- function(p1, p2) {
+  sqrt(sum((p1 - p2)^2))
+}
+
+# Compute the discrete Frechet distance matrix
+compute_frechet_matrix <- function(P, Q) {
+  m <- nrow(P)
+  n <- nrow(Q)
+  D <- matrix(0, nrow = m, ncol = n)
+  
+  for (i in 1:m) {
+    for (j in 1:n) {
+      d <- euclidean(P[i, ], Q[j, ])
+      if (i == 1 && j == 1) {
+        D[i, j] <- d
+      } else if (i == 1) {
+        D[i, j] <- max(D[i, j - 1], d)
+      } else if (j == 1) {
+        D[i, j] <- max(D[i - 1, j], d)
+      } else {
+        D[i, j] <- max(min(D[i - 1, j], D[i - 1, j - 1], D[i, j - 1]), d)
+      }
+    }
+  }
+  return(D)
+}
+
+# Compute Frechet distance
+frechet_matrix <- compute_frechet_matrix(A, B)
+frechet_distance <- frechet_matrix[nrow(A), nrow(B)]
+cat(sprintf("Discrete Frechet Distance: %.3f\n", frechet_distance))
+
+# Backtrack to find leash path
+trace_path <- function(D) {
+  i <- nrow(D)
+  j <- ncol(D)
+  path <- list(c(i, j))
+  
+  while (i > 1 || j > 1) {
+    if (i > 1 && j > 1) {
+      vals <- c(D[i - 1, j], D[i - 1, j - 1], D[i, j - 1])
+      min_val <- min(vals)
+      if (D[i - 1, j - 1] == min_val) {
+        i <- i - 1
+        j <- j - 1
+      } else if (D[i - 1, j] == min_val) {
+        i <- i - 1
+      } else {
+        j <- j - 1
+      }
+    } else if (i > 1) {
+      i <- i - 1
+    } else {
+      j <- j - 1
+    }
+    path <- append(path, list(c(i, j)))
+  }
+  return(path)
+}
+
+# Get the leash path
+path <- trace_path(fm)
+
+D = Drotate
+C = Crotate
+
+# Prepare data for plotting
+df_A <- data.frame(x = C[, 1], y = C[, 2], label = paste0("A", 1:nrow(C)))
+df_B <- data.frame(x = D[, 1], y = D[, 2], label = paste0("B", 1:nrow(D)))
+
+# Leash lines
+leash_lines <- data.frame()
+for (p in path) {
+  i <- p[1]
+  j <- p[2]
+  leash_lines <- rbind(leash_lines, data.frame(
+    x = C[i, 1], y = C[i, 2],
+    xend = D[j, 1], yend = D[j, 2]
+  ))
+}
+
+# Plotting
+ggplot() +
+  geom_path(data = df_A, aes(x = x, y = y), color = "blue") +
+  geom_point(data = df_A, aes(x = x, y = y), color = "blue") +
+  geom_text(data = df_A, aes(x = x + 0.2, y = y, label = label), color = "blue") +
+  geom_path(data = df_B, aes(x = x, y = y), color = "red") +
+  geom_point(data = df_B, aes(x = x, y = y), color = "red") +
+  geom_text(data = df_B, aes(x = x + 0.2, y = y, label = label), color = "red") +
+  geom_segment(data = leash_lines, aes(x = x, y = y, xend = xend, yend = yend), 
+               linetype = "dashed", color = "gray40") +
+ # ggtitle(sprintf("Discrete Fréchet Distance: %.3f", frechet_distance)) +
+  coord_fixed() +
+  theme_minimal()
+
+```
+
+```{r}
+sqrt(8)
+2.5^2
+```
+
+
+#### selecting the right starting points
+1. Point closest to the origin (either A or B becomes the first set)
+1.1 if multiple options exist pick one closest to the other set
+1.2 if still mutliple options exist take the one with the smallest x value
+1.3 if still multiple options exist take the one with the smallest y value
+2. repeat for the other set, replacing origin with the starting point in the reference set
+
+```{r}
+find_closest_pair <- function(A, B) {
+  min_dist <- Inf
+  min_i <- 1
+  min_j <- 1
+  for (i in 1:nrow(A)) {
+    for (j in 1:nrow(B)) {
+      dist <- sqrt(sum((A[i, ] - B[j, ])^2))
+      if (dist < min_dist) {
+        min_dist <- dist
+        min_i <- i
+        min_j <- j
+      }
+    }
+  }
+  list(i = min_i, j = min_j, distance = min_dist)
+}
+
+rotate_curve <- function(curve, start_index) {
+  rbind(curve[start_index:nrow(curve), ], curve[-(start_index:nrow(curve)), ], curve[start_index, ])
+}
+
+fcp = find_closest_pair(A,B)
+
+A = rotate_curve(A, fcp$i);A
+B = rotate_curve(B, fcp$j);B
+
+```
+
+1. pick point closest to the origin
+```{r}
+# we take sqrt(x^2 + y^2)
+# have to think about the fact that we have end = start, so maybe introduce that into the official version, otherhwise always two options
+
+C <- matrix(c(-1,-2,1.5,2,-1,
+              -1,2,1.5,-2,-1), ncol = 2, byrow = FALSE)
+D <- matrix(2*c(-.75,-2,.5,2,-.75,
+                -.75,2,.5,-2,-.75), ncol = 2, byrow = FALSE)
+
+plot(D, col = "blue", type = "b")
+lines(C, col  = "red", type = "b")
+
+all_points = cbind(rbind(C,D),group = c(rep(0, nrow(C)), rep(1, nrow(D)))) # incude and indicator from which polygon they are
+
+dist2origin = sqrt(all_points[,1]^2 + all_points[,2]^2)
+closest_point = all_points[dist2origin == min(dist2origin),] # all possible closest points to the origin
+
+# now the shortest distance from these points to the points in their other polygon
+# so if closest_point[,3] == 1 then ... and == 2 then ...
+# for every points in the closest points we select the points that belong to the other polygon and then take minimum distance
+fromC = which(closest_point[,3] == 0)
+fromD = which(closest_point[,3] == 1)
+
+# for every points we select the rows that have C[,3] == abs(D[,3]-1) and vice versa, and then compare the smallest distance
+point1 = closest_point[1,] # just one points as try out
+points2comp = all_points[all_points[,3] == abs(point1[3] - 1),] # the points we need to compare to
+dist2other = sqrt(all_points[,1]^2 + all_points[,2]^2)
+
+
+###################
+
+```
+```{r}
+
+C <- matrix(c(-1,-2,1.5,2,-1,
+              -1,2,1.5,-2,-1), ncol = 2, byrow = FALSE)
+D <- matrix(2*c(-.75,-2,.5,2,-.75,
+                -.75,2,.5,-2,-.75), ncol = 2, byrow = FALSE)
+
+all_points = as.data.frame(cbind(rbind(C,D),group = c(rep(0, nrow(C)), rep(1, nrow(D))))) # include and indicator from which polygon they are
+all_points = all_points[!duplicated(all_points[,1:2]),]
+all_points$dist2origin = sqrt(all_points[,1]^2 + all_points[,2]^2)
+
+df1 = all_points[all_points$dist2origin == min(all_points$dist2origin),]
+
+# so now for each points the minimum distance to the other matrix
+df1$min_dist =  apply(df1, 1, function(x) {
+  opo = all_points[all_points$group == abs(x[3] - 1),]
+  min(sqrt((opo$V1 - x[1])^2 + (opo$V2 - x[2])^2))
+  
+  })   
+
+df1 = df1[df1$min_dist == min(df1$min_dist),]
+
+# now we take the smallest x coordinates (use if statemnet here)
+if(nrow(df1) > 1){
+  start = df1[which(df1$V1 == min(df1$V1)),] # row with the smallest x values
+
+  if(nrow(start) > 1) start = df1[which(start$V2 == min(start$V2)),]
+  
+}
+
+
+mindistance_to_point = function(data, point){
+  # note that data has to have data[,1] -> x coord, and data[,2] -> y coord
+  data$dist2point = sqrt((data[,1] - point[1])^2 + (data[,2] - point[2])^2)
+  data[data$dist2point == min(data$dist2point),]
+}
+
+
+
+find_starting_point = function(C, D, origin = c(0,0)){
+  if(missing(D)) all_points = as.data.frame(C)  # include and indicator from which polygon they are
+  else all_points = as.data.frame(cbind(rbind(C,D), group = c(rep(0, nrow(C)), rep(1, nrow(D)))))  # include and indicator from which polygon they are
+  print(all_points)
+  
+  all_points = all_points[!duplicated(all_points[,1:2]),] # remove duplicate points based on x and y (if optimal point occurs in C and D it will be automatically picked later)
+  
+  # distance from each point to the origin
+  df1 = mindistance_to_point(all_points, origin)
+  
+  # distance to other matrix (if applicable)
+  if(origin[1] == 0 & origin[2] == 0) {
+    df1$min_dist = apply(df1, 1, function(x) {
+      print(x)
+      opo = all_points[all_points$group == abs(x[3] - 1),]
+      print(opo)
+      min(sqrt((opo$V1 - x[1])^2 + (opo$V2 - x[2])^2))
+      }) 
+    
+      df1 = df1[df1$min_dist == min(df1$min_dist),]
+  }
+  
+  # now we take the smallest x coordinates and if they are the same the smallest y value
+  if(nrow(df1) > 1){
+    start = df1[which(df1$V1 == min(df1$V1)),] # row with the smallest x values
+  
+    if(nrow(start) > 1) start = df1[which(start$V2 == min(start$V2)),]
+  } else start = df1
+  
+  
+  # now find the point on the other polygon
+  start2 = find_starting_point(C = all_points[all_points$group == abs(x[3] - 1),], origin = c(start$V1, start$V2))
+  
+  return(rbind(start, start2))
+}
+
+g5 = find_starting_point(C = C,D = D)
+
+g3 = find_starting_point(C,D)
+g4 = find_starting_point(C = D,origin = c(g3$V1, g3$V2))
+
+r = NULL
+is.numeric(r)
+
+```
+
+
+```{r}
+
+# Function to calculate Euclidean distance between two points
+euclidean_dist <- function(p1, p2) {
+  sqrt((p1[1] - p2[1])^2 + (p1[2] - p2[2])^2)
+}
+
+# Function to find the point in either C or D closest to the origin
+closest_to_origin <- function(C, D) {
+  # Calculate distances of each point in C and D from the origin (0, 0)
+  origin_distances_C <- apply(C, 1, function(point) euclidean_dist(data.frame(x = 0, y = 0), point))
+  origin_distances_D <- apply(D, 1, function(point) euclidean_dist(data.frame(x = 0, y = 0), point))
+  
+  print(origin_distances_D)
+  # Get the minimum distances for each set
+  min_dist_C <- min(origin_distances_C)
+  min_dist_D <- min(origin_distances_D)
+  
+  # Determine which set has the point closest to the origin
+  if (min_dist_C < min_dist_D) {
+    # Choose point from C
+    closest_points <- C[origin_distances_C == min_dist_C, ]
+    source_set <- "C"
+  } else if (min_dist_D < min_dist_C) {
+    # Choose point from D
+    closest_points <- D[origin_distances_D == min_dist_D, ]
+    source_set <- "D"
+  } else {
+    # If both are equally close, pick from the set with the closest point to the other set
+    dist_to_other_set_C <- apply(C, 1, function(point) min(apply(D, 1, function(d) euclidean_dist(point, d))))
+    dist_to_other_set_D <- apply(D, 1, function(point) min(apply(C, 1, function(c) euclidean_dist(point, c))))
+    
+    if (min(dist_to_other_set_C) < min(dist_to_other_set_D)) {
+      # Pick point from C
+      closest_points <- C[origin_distances_C == min_dist_C, ]
+      source_set <- "C"
+    } else {
+      # Pick point from D
+      closest_points <- D[origin_distances_D == min_dist_D, ]
+      source_set <- "D"
+    }
+  }
+  print(closest_points)
+  
+  # If there are multiple candidates, resolve tie by choosing the smallest x and y
+  closest_points <- closest_points[order(closest_points$x, closest_points$y), ]
+  return(list(point = closest_points[1, ], source_set = source_set))
+}
+
+# Function to find the point in the other set (D or C) closest to the chosen point
+closest_to_chosen_point <- function(chosen_point, source_set, C, D) {
+  # If the chosen point was from C, find the closest point in D, and vice versa
+  if (source_set == "C") {
+    dist_to_D <- apply(D, 1, function(point) euclidean_dist(chosen_point, point))
+    closest_points <- D[dist_to_D == min(dist_to_D), ]
+  } else {
+    dist_to_C <- apply(C, 1, function(point) euclidean_dist(chosen_point, point))
+    closest_points <- C[dist_to_C == min(dist_to_C), ]
+  }
+  
+  # Resolve tie by choosing the smallest x and y
+  print(closest_pointx)
+  closest_points <- closest_points[order(closest_points$x, closest_points$y), ]
+  return(closest_points[1, ])
+}
+
+# Step 1: Find the first point closest to the origin (it could be from C or D)
+chosen_first <- closest_to_origin(C, D)
+
+# Step 2: Find the closest point from the other set to the chosen first point
+chosen_second <- closest_to_chosen_point(chosen_first$point, chosen_first$source_set, C, D)
+
+# Print the results
+cat("Chosen first point (from set", chosen_first$source_set, "):\n")
+print(chosen_first$point)
+cat("Chosen second point (from the other set):\n")
+print(chosen_second)
+
+```
+
+
+```{r}
+
+all_points = as.data.frame(cbind(rbind(C,D), group = as.factor(c(rep("C", nrow(C)), rep("D", nrow(D)))))) # include and indicator from which polygon they are
+all_points = all_points[!duplicated(all_points[,1:2]),]
+
+# IF statement so we can reuse for finding the second starting point 
+
+all_points$dist2origin = sqrt(all_points[,1]^2 + all_points[,2]^2)
+
+# find the points that are closest to the origin (could be multiple from the same group and from different groups)
+closest2origin = all_points %>% filter(dist2origin == min(dist2origin)) 
+
+# IF statement if the if we have more than one row
+
+# for every point calculate how close it is to the other group
+closest2origin$dist2other = apply(closest2origin, 1, function(x) {
+  other_group = all_points[all_points$group != as.numeric(x[3]),]
+  min(sqrt((x[1] - other_group[,1])^2 + (x[2]- other_group[,1])^2))
+})
+
+closest2other = closest2origin %>% filter(dist2other == min(dist2other)) 
+
+# IF we have more than one row
+
+# pick points which has the lowest x value
+smallest.x = closest2other[which(closest2other$V1 == min(closest2other$V1)), ]
+
+# IF still more than one row
+
+# pick points with lowest y value
+smallest.y = closest2other[which(smallest.x$V2 == min(smallest.x$V2)), ]
+
+```
+
+```{r}
+first_starting_point = function(C, D, first = c(0,0)){
+    
+  all_points = as.data.frame(cbind(rbind(C,D), group = as.factor(c(rep("C", nrow(C)), rep("D", nrow(D)))))) # include and indicator from which polygon they are
+  all_points = all_points[!duplicated(all_points[,1:2]),]
+    
+  # find distance to origin 
+  all_points$dist2origin = sqrt((all_points[,1] - first[1])^2 + (all_points[,2] - first[2])^2)
+  
+  # find the points that are closest to the origin (could be multiple from the same group and from different groups)
+  closest2origin = all_points %>% filter(dist2origin == min(dist2origin)) 
+
+  # if we have more than one row we calculate the minimal distance of those points to the other group
+  if (nrow(closest2origin) == 1) start1 = closest2origin 
+  else {
+    closest2origin$dist2other = apply(closest2origin, 1, function(x) {
+      other_group = all_points[all_points$group != as.numeric(x[3]),] # define other group
+      min(sqrt((x[1] - other_group[,1])^2 + (x[2]- other_group[,2])^2))}) # minimal distance to other group
+    
+    closest2other = closest2origin %>% filter(dist2other == min(dist2other)) 
+
+    if (nrow(closest2other) == 1) start1 = closest2other 
+    else {
+      smallest.x = closest2other[which(closest2other$V1 == min(closest2other$V1)), ]
+      
+      if(nrow(smallest.x) == 1) start1 = smallest.x 
+      else start1 = closest2other[which(smallest.x$V2 == min(smallest.x$V2)), ]
+    }
+  }
+  
+  return(start1)
+  
+}
+
+hs1 = first_starting_point(C,D)
+hs1[1:2]
+
+sqrt(.5^2)
+
+```
+
+```{r}
+second_starting_point = function(C,D,start) {
+  
+  all_points = as.data.frame(cbind(rbind(C,D), group = as.factor(c(rep("C", nrow(C)), rep("D", nrow(D)))))) # include and indicator from which polygon they are
+  all_points = all_points[!duplicated(all_points[,1:2]),]
+  relevant_points = all_points %>% filter(group != start$group)
+
+  # if the first starting point also occurs in the other group this is automatically the second starting point
+  if(nrow(merge(data.frame(start[,1:2]), relevant_points[,1:2]))>0) start2 = start
+  else {
+    relevant_points$dist2start = sqrt((relevant_points[,1] - start[1,1])^2 + (relevant_points[,2] - start[1,2])^2)
+    closest2start = relevant_points %>% filter(dist2start == min(dist2start)) 
+    
+    if (nrow(closest2start) == 1) start2 = closest2start 
+    else {
+      closest2start$dist2other = apply(closest2start, 1, function(x) {
+        other_group = all_points[all_points$group != as.numeric(x[3]),] # define other group
+        min(sqrt((x[1] - other_group[,1])^2 + (x[2]- other_group[,2])^2))}) # minimal distance to other group
+      
+      closest2other = closest2start %>% filter(dist2other == min(dist2other)) 
+  
+      if (nrow(closest2other) == 1) start2 = closest2other 
+      else {
+        smallest.x = closest2other[which(closest2other$V1 == min(closest2other$V1)), ]
+        
+        if(nrow(smallest.x) == 1) start2 = smallest.x 
+        else start2 = closest2other[which(smallest.x$V2 == min(smallest.x$V2)), ]
+      }
+    }    
+    
+  }
+  
+  return(start2)
+}
+
+second_starting_point(C,D,hs1)
+
+
+
+
+```
+
+```{r}
+
+C <- matrix(c(-1,-2,1.5,2,-1,
+              -1,2,1.5,-2,-1), ncol = 2, byrow = FALSE)
+D <- matrix(2*c(-0.5,-0.75,-2,.5,2,-.5,
+                -0.75,-0.5,2,.5,-2,-.75), ncol = 2, byrow = FALSE)
+
+plot(D, col = "blue", type = "b", asp = 1)
+lines(C, col  = "red", type = "b")
+```
+
+
+
+
+
+
+
+##### now also have to make sure that we go clockwise within the points
+```{r}
+plot(0:5, asp = 1, type = "n")
+polygon(A, col = "red"); points(A, lwd = 5, col = "pink")
+polygon(B, col = "blue"); points(B, lwd = 5, col = "lightblue")
+```
+
+```{r}
+Ap = st_polygon(list(as.matrix(A[,1:2])))
+Bp = st_polygon(list(as.matrix(B[,1:2])))
+
+AC = st_centroid(Ap)
+BC = st_centroid(Bp)
+
+AC[2] # y and [1] is x
+
+a = atan( (-2) / (-2) );a * (180/pi)
+
+angle_func = function(c, p){
+  atan( (c[2] - p[2]) / (c[1] - p[1])) * ( (180 / pi))
+}
+
+a = c(0,0) # note that since all of our centrouds are centered we will always compare to 0,0,  not all measures describe this tho
+b = c(2,-2)
+angle_func(a, b)
+
+
+atan2(b[2], b[1]) * ( (180 / pi))
+
+apply(A,1,function(x) angle_func(x,AC))
+
+C <- matrix(c(-1, 1,
+              2,2,
+              2,-2,
+              -1,-1), ncol = 2, byrow = TRUE)
+
+angle_func2 = function(p){
+  degrees = atan2(p[2], p[1]) * ( (180 / pi))
+  #ifelse(degrees < 0, degrees + 360, degrees)
+}
+
+apply(C,1,angle_func2)
+
+```
+
+```{r}
+# Example polygon (irregular shape)
+points <- data.frame(
+  x = c(1,-1,1,3,3,1),
+  y = c(1,0,2,2,0,-1)
+)
+
+plot(points, type = "b")
+
+# Compute centroid (mean method, works for many shapes)
+centroid <- colMeans(points)
+
+# Compute angle from centroid to each point
+angles <- atan2(points$y - centroid[2], points$x - centroid[1])
+angles_deg <- angles * 180 / pi
+angles_deg[angles_deg < 0] <- angles_deg[angles_deg < 0] + 360
+
+# Order clockwise (descending)
+cw_order <- order(-angles_deg)
+points_cw <- points[cw_order, ]
+
+# Plot to verify
+plot(points, type = 'n', asp = 1, main = "Clockwise Polygon")
+polygon(points_cw, col = 'lightblue', border = 'blue')
+points(centroid[1], centroid[2], col = "red", pch = 19)
+text(points_cw, labels = seq_len(nrow(points_cw)), pos = 3)
+
+```
+```{r}
+# Load necessary packages
+library(ggplot2)
+library(dplyr)
+
+# Define a crescent-like, non-convex polygon (deliberately weird shape)
+crescent <- data.frame(
+  x = c(3,2,4, 5, 4, 2, 1, 0, 1, 3) ,#%>% rev(),
+  y = c(1,0,0, 2, 4, 4, 3, 2, 1, 1) #%>% rev()
+)
+
+plot(crescent, type = "l")
+
+# Close the polygon for visualization
+crescent_closed <- rbind(crescent, crescent[1, ])
+
+# Function to check winding direction
+is_clockwise <- function(x, y) {
+  n <- length(x)
+  x_next <- c(x[-1], x[1])
+  y_next <- c(y[-1], y[1])
+  area <- sum(x * y_next - x_next * y)
+  print(area)
+  return(area < 0)
+}
+
+# Check direction
+cw <- is_clockwise(crescent$x, crescent$y)
+cat("Original winding: ", ifelse(cw, "Clockwise", "Counter-Clockwise"), "\n")
+
+# Optionally reverse the polygon if you want clockwise order
+if (!cw) {
+  crescent <- crescent[nrow(crescent):1, ]
+}
+crescent_closed <- rbind(crescent, crescent[1, ])
+
+# Add index for arrow labels
+crescent$idx <- 1:nrow(crescent)
+
+# Plot
+ggplot(crescent, aes(x, y)) +
+  geom_polygon(fill = "lightblue", color = "blue", alpha = 0.5) +
+  geom_path(arrow = arrow(type = "open", length = unit(0.2, "inches")),
+            color = "black", size = 1) +
+  geom_point(size = 3, color = "red") +
+  geom_text(aes(label = idx), vjust = -1, fontface = "bold") +
+  coord_fixed() +
+  ggtitle(paste("Polygon with", ifelse(cw, "Clockwise", "Counter-Clockwise"), "Winding")) +
+  theme_minimal()
+
+
+is_clockwise <- function(x, y) {
+  n <- length(x)
+  x_next <- c(x[-1], x[1])
+  y_next <- c(y[-1], y[1])
+  area <- sum(x * y_next - x_next * y)
+  print(area)
+  return(area < 0)
+}
+
+make_clockwise = function(coordinates){
+  # check direction and change if needed
+  direction = is_clockwise(coordinates[,1], coordinates[,2])
+  
+  if(!direction) return(coordinates[nrow(coordinates):1, ])
+  else return(coordinates)
+  
+}
+
+
+
+```
+
+FINAL FRECHET DISTANCE EVERYTHING COMBINED
+```{r}
+## first we calculate the starting points
+###### first starting points
+first_starting_point = function(C, D, first = c(0,0)){
+    
+  all_points = as.data.frame(cbind(rbind(C,D), group = as.factor(c(rep("C", nrow(C)), rep("D", nrow(D)))))) # include and indicator from which polygon they are
+  all_points = all_points[!duplicated(all_points[,1:2]),]
+    
+  # find distance to origin 
+  all_points$dist2origin = sqrt((all_points[,1] - first[1])^2 + (all_points[,2] - first[2])^2)
+  
+  # find the points that are closest to the origin (could be multiple from the same group and from different groups)
+  closest2origin = all_points %>% filter(dist2origin == min(dist2origin)) 
+
+  # if we have more than one row we calculate the minimal distance of those points to the other group
+  if (nrow(closest2origin) == 1) start1 = closest2origin 
+  else {
+    closest2origin$dist2other = apply(closest2origin, 1, function(x) {
+      other_group = all_points[all_points$group != as.numeric(x[3]),] # define other group
+      min(sqrt((x[1] - other_group[,1])^2 + (x[2]- other_group[,2])^2))}) # minimal distance to other group
+    
+    closest2other = closest2origin %>% filter(dist2other == min(dist2other)) 
+
+    if (nrow(closest2other) == 1) start1 = closest2other 
+    else {
+      smallest.x = closest2other[which(closest2other$V1 == min(closest2other$V1)), ]
+      
+      if(nrow(smallest.x) == 1) start1 = smallest.x 
+      else start1 = closest2other[which(smallest.x$V2 == min(smallest.x$V2)), ]
+    }
+  }
+  
+  return(start1)
+  
+}
+
+##### second starting points
+second_starting_point = function(C,D,start) {
+  
+  all_points = as.data.frame(cbind(rbind(C,D), group = as.factor(c(rep("C", nrow(C)), rep("D", nrow(D)))))) # include and indicator from which polygon they are
+  all_points = all_points[!duplicated(all_points[,1:2]),]
+  relevant_points = all_points %>% filter(group != start$group)
+
+  # if the first starting point also occurs in the other group this is automatically the second starting point
+  if(nrow(merge(data.frame(start[,1:2]), relevant_points[,1:2]))>0) start2 = start
+  else {
+    relevant_points$dist2start = sqrt((relevant_points[,1] - start[1,1])^2 + (relevant_points[,2] - start[1,2])^2)
+    closest2start = relevant_points %>% filter(dist2start == min(dist2start)) 
+    
+    if (nrow(closest2start) == 1) start2 = closest2start 
+    else {
+      closest2start$dist2other = apply(closest2start, 1, function(x) {
+        other_group = all_points[all_points$group != as.numeric(x[3]),] # define other group
+        min(sqrt((x[1] - other_group[,1])^2 + (x[2]- other_group[,2])^2))}) # minimal distance to other group
+      
+      closest2other = closest2start %>% filter(dist2other == min(dist2other)) 
+  
+      if (nrow(closest2other) == 1) start2 = closest2other 
+      else {
+        smallest.x = closest2other[which(closest2other$V1 == min(closest2other$V1)), ]
+        
+        if(nrow(smallest.x) == 1) start2 = smallest.x 
+        else start2 = closest2other[which(smallest.x$V2 == min(smallest.x$V2)), ]
+      }
+    }    
+    
+  }
+  
+  return(start2)
+}
+
+
+#### rotate to clockwise if necessary
+is_clockwise <- function(x, y) {
+  n <- length(x)
+  x_next <- c(x[-1], x[1])
+  y_next <- c(y[-1], y[1])
+  area <- sum(x * y_next - x_next * y)
+  return(area < 0)
+}
+
+make_clockwise = function(coordinates){
+  # check direction and change if needed
+  direction = is_clockwise(coordinates[,1], coordinates[,2])
+  
+  if(!direction) return(coordinates[nrow(coordinates):1, ])
+  else return(coordinates)
+  
+}
+
+
+### actual calculating of the frechet distance
+compute_frechet_matrix <- function(P, Q) {
+  m <- nrow(P)
+  n <- nrow(Q)
+  D <- matrix(0, nrow = m, ncol = n)
+  
+  for (i in 1:m) {
+    for (j in 1:n) {
+      d <- euclidean(P[i, ], Q[j, ])
+      if (i == 1 && j == 1) {
+        D[i, j] <- d
+      } else if (i == 1) {
+        D[i, j] <- max(D[i, j - 1], d)
+      } else if (j == 1) {
+        D[i, j] <- max(D[i - 1, j], d)
+      } else {
+        D[i, j] <- max(min(D[i - 1, j], D[i - 1, j - 1], D[i, j - 1]), d)
+      }
+    }
+  }
+  
+  return(D)
+  
+}
+
+```
+
+
+```{r}
+## the data
+C <- matrix(c(-1,-2,1.5,2,-1,
+              -1,2,1.5,-2,-1), ncol = 2, byrow = FALSE)
+
+C <- matrix(c((c(-1,-2,1.5,2,-1) %>% rev()),(c(-1,2,1.5,-2,-1) %>% rev())), ncol = 2, byrow = FALSE)
+D <- matrix(2*c(-0.5,-0.75,-2,.5,2,-.5,
+                -0.75,-0.5,2,.5,-2,-.75), ncol = 2, byrow = FALSE)
+
+## deduplicate the data
+C = C[2:nrow(C),]
+D = D[2:nrow(D),]
+
+firsths = first_starting_point(C,D)
+secondhs = second_starting_point(C,D,firsths)
+
+Cstart = which(C[,1] == firsths[,1] & C[,2] == firsths[,2])
+Dstart = which(D[,1] == secondhs[,1] & D[,2] == secondhs[,2])
+
+Corder = rbind(C[Cstart:nrow(C),], C[1:Cstart,])
+Dorder = rbind(D[Dstart:nrow(D),], D[1:Dstart,])
+
+Crotate = make_clockwise(Corder)
+Drotate = make_clockwise(Dorder)
+
+fm = compute_frechet_matrix(Crotate, Drotate)
+frechet_distance <- fm[nrow(Crotate), nrow(Drotate)]
+
+
+calc_frechet_distance = function(C,D){
+  # remove duplicates
+  C = C[!duplicated(C),]
+  D = D[!duplicated(D),]
+  
+  firsths = first_starting_point(C,D)
+  secondhs = second_starting_point(C,D,firsths)
+  
+  Cstart = which(C[,1] == firsths[,1] & C[,2] == firsths[,2])
+  Dstart = which(D[,1] == secondhs[,1] & D[,2] == secondhs[,2])
+  
+  Corder = rbind(C[Cstart:nrow(C),], C[1:Cstart,])
+  Dorder = rbind(D[Dstart:nrow(D),], D[1:Dstart,])
+  
+  Crotate = make_clockwise(Corder)
+  Drotate = make_clockwise(Dorder)
+  
+  fm = compute_frechet_matrix(Crotate, Drotate)
+  frechet_distance <- fm[nrow(C), nrow(D)]
+  
+  return(frechet_distance)
+}
+
+calc_frechet_distance(C,D)
+
+
+
+```
+
+
+group D with x = (-1.5,-4,1,4,-1,-1.5) and y = c(-1,4,1,-4,-1.5,-1)
+group C with x = (-1,-2,1.5,2,-1) and y = c(-1,2,1.5,-2,-1)
+
+
+```{r}
+A = st_polygon(list(Crotate))
+B = st_polygon(list(Drotate))
+
+plot(A)
+plot(B, add = TRUE)
+
+st_distance(A, B, which = "Frechet", by_element = TRUE)
+st_distance()
+```
+
+
+
+
+
+
+
+
+
+
+
+## box-counting dimension
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

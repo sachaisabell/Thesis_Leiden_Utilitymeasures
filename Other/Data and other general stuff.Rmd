@@ -1,0 +1,126 @@
+---
+title: "Data and other general stuff"
+output: pdf_document
+date: "2025-03-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Useful links
+https://crd230.github.io/lab7.html # for neighbors in R
+https://mikeyharper.uk/calculating-neighbouring-polygons-in-r/ # spatial visualization
+
+## General
+```{r}
+library(sdcSpatial)
+library(raster)
+
+# data set being used
+dwellings
+```
+
+## Template for utility functions
+input: data original and data safe
+output: value
+
+
+input from a masking method is in the type of one dataframe with column x and y for coordinates
+input for a grid SDC method is of type sdc_raster
+utility needs to be given on these, since it is calculated after the sdc method has been applied
+
+What should the general functions options be?
+input: coordinates, values (so the data basically), protection method, mean or sum etc.
+output: original data from raster, safe data from raster
+
+
+
+## Applying SDC, creating a plot, obtaining safe/original data from the raster
+```{r}
+map_original = sdc_raster(dwellings[,1:2], dwellings$consumption)
+map_safe = protect_smooth(map_original)
+
+# the plots
+mfrow = c(1,2)
+plot(map_original)
+plot(map_safe)
+
+# the data
+## turning raster into matrices
+dat_original = raster::as.matrix(map_original$value$mean); dat_original[is.na(dat_original)] = 0
+dat_safe = raster::as.matrix(map_safe$value$mean); dat_safe[is.na(dat_safe)] = 0
+
+```
+
+
+## Visualizing the polygons
+```{r}
+polies1 = raster::rasterToPolygons(map_original$value$mean)
+polies2 = raster::rasterToPolygons(map_safe$value$mean)
+
+raster::plot(polies1)
+raster::plot(polies2)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

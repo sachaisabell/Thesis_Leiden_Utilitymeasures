@@ -1,0 +1,322 @@
+---
+title: "sdcSpatial introduction"
+author: "Sacha van de Hoef"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries
+```{r}
+library(sdcSpatial)
+library(sp)
+```
+
+## Datasets 
+```{r}
+head(dwellings) #sdcSpatial
+enterprises # sdcSpatial
+meuse # sp
+```
+
+
+## SDC methods
+### Point perturbation
+- mask_grid
+- mask_random
+- mask_voronoi
+- mask_weighted_random
+
+### on raster/grid data
+- protect_quadtree
+- protect_smooth
+- remove_sensitive
+- protect_neighbourhood
+
+
+## Examples SDC on point perturbation
+Returns either a plot (only for small data sets), or the perturbed data points when plot = FALSE.
+```{r}
+# small dataset for plotting
+small_points <- cbind(
+  x = c(2.5, 3.5, 7.2, 1.5),
+  y = c(6.2, 3.8, 4.4, 2.1))
+
+
+### Method 1: mask grid
+# note that r has to be set beforehand, grid resolution
+grid_mask = mask_grid(small_points, r = 1, plot = TRUE)
+
+### Method 2: mask random
+# note that r has to be set beforehand, maximum perturbation distance
+random_mask = mask_random(small_points, r = 1, plot = TRUE)
+
+### Method 3: mask voronoi
+voronoi_mask = mask_voronoi(small_points, plot = TRUE)
+
+### Method 4: mask weighted random
+# note that r and k have to be set beforehand, maximum perturbation distance and number of neighbors
+wr_mask = mask_weighted_random(small_points, k = 2, r = 1, plot = TRUE)
+```
+
+
+## Examples SDC on raster/grid
+```{r}
+# original map, showing the sensitive points and all others
+input_map = sdc_raster(dwellings[,1:2], dwellings$consumption)
+plot(input_map)
+
+### Method 1: removing all sensitive values
+rs_map = remove_sensitive(input_map)
+plot(rs_map)
+
+### Method 2: smoothing
+ps_map = protect_smooth(input_map)
+plot(ps_map)
+
+### Method 3: quadtree
+pq_map = protect_quadtree(input_map)
+plot(pq_map)
+
+### Method 4: neighbourhood
+nb_map = protect_neighborhood(input_map)
+plot(nb_map)
+```
+
+```{r}
+as.data.frame(ps_map, xy = TRUE)
+
+library("tabularaster")
+
+as_tibble(raster(ps_map$value$sum))
+
+bricks = brick(ps_map$value)
+as(bricks, "SpatRaster")
+
+library("stars")
+
+st_as_stars(bricks)
+
+
+mean_input = mean(input_map)
+summary(mean_input)
+
+class(input_map)
+extract(bricks, 870)
+
+rasterize(ps_map$scale)
+sdc_raster(ps_map)
+
+sums = mean(ps_map)
+brick(sums)
+
+input_map$value$mean
+
+
+class(sums)
+rtp = rasterToPoints(sums)
+plot(rtp[,1:2], col = rtp[,3])
+
+getValues(sums)
+raster(sums)
+extract(sums)
+
+plot(getValues(sums))
+
+
+df = as.data.frame(rasterToPoints(ps_map))
+ps_map
+
+
+# ps_map$value is a brick object with multiple layers (count, sum, mean, scale)
+raster::as.data.frame(ps_map$value)
+raster::as.data.frame(input_map$value)
+
+xyFromCell(ps_map$value)
+
+raster::values(ps_map$value)
+
+raster(ps_map$value)
+
+new = brick(ps_map$value)
+
+library("exactextractr")
+exact_extract(new)
+
+rast <- raster::raster(matrix(1:100, ncol=10), xmn=0, ymn=0, xmx=10, ymx=10)
+poly <- sf::st_as_sfc('POLYGON ((2 2, 7 6, 4 9, 2 2))')
+
+
+### Coverage fraction?
+# named summary operation on RasterLayer, returns vector
+exact_extract(ps_map$value$mean, polies3)
+
+polies = sp::Polygon(dwellings[,1:2])
+polies2 = sp::Polygons(list(polies), ID = "A")
+polies3 = sp::SpatialPolygons(list(polies2))
+
+
+raster::extract(ps_map$value$mean, polies3)
+
+
+
+#### THIS SHOULD WORK !!!
+raster::values(ps_map$value$mean)
+rasmat = raster::as.matrix(ps_map$value$sum)
+
+# testing by selecting the valus
+dfrasmat = as.data.frame(rasmat)
+
+library(reshape2)
+df_long = melt(dfrasmat)
+colnames(df_long) = c("y","value")
+df_long$x = rep(1:62, 61)
+
+# Generate a blue color palette
+blue_palette <- colorRampPalette(c("gray", "orange", "darkgreen"))
+
+# Normalize values to a range from 1 to the number of colors
+num_colors <- 1000  # Adjust for more color granularity
+col_breaks <- cut(df_long$value, breaks = num_colors, labels = FALSE)
+
+# Assign colors based on values
+point_colors <- blue_palette(num_colors)[col_breaks]
+
+## plotting the final map
+plot(df_long$x, df_long$y, col = point_colors, pch = 19, asp = 1)
+
+
+```
+
+```{r}
+plot(ps_map$value$sum)
+
+head(dwellings) #sdcSpatial 
+
+```
+
+
+
+### neigbours / polygons etc tryouts.
+
+```{r}
+
+
+map_original = sdc_raster(dwellings[,1:2], dwellings$consumption)
+map_safe = protect_smooth(map_original)
+
+# the plots
+mfrow = c(1,2)
+plot(map_original)
+plot(map_safe)
+
+# the data
+## turning raster into matrices
+dat_original = raster::as.matrix(map_safe$value$mean); dat_original[is.na(dat_original)] = 0
+dat_safe = raster::as.matrix(map_original$value$mean); dat_safe[is.na(dat_safe)] = 0
+
+
+## plotting the polygon boundaries
+# this makes sense, we see way less values that are 0 (or NA in the map) for the safe version 
+#(since we use smoothing as the SDC technique)
+polies1 = raster::rasterToPolygons(map_original$value$mean)
+polies2 = raster::rasterToPolygons(map_safe$value$mean)
+
+raster::plot(polies1)
+raster::plot(polies2)
+
+
+## now how to get the neighboring points from this
+library("spdep")
+
+ras = raster::rasterFromCells(map_original$value$mean, c(1:22, 62:84))
+polies.ras = raster::rasterToPolygons(ras)
+nb_q = poly2nb(polies.ras, queen = TRUE)
+
+raster::plot(polies.ras)
+coords <- coordinates(polies.ras)
+plot(polies.ras)
+plot(nb_q, coords, col="grey", add = TRUE)
+
+card(nb_q) # extracting the number of neighbors for each cell
+
+# weight matrix can be binary (yes or no neighbor), based on the distance itself, or the values of a variable
+## BINARY
+nb_q[[1]] # can select for each one which are the neighbors, now need to turn this into a binary matrix
+nb_q[1:3] # extract list
+nb2mat(nb_q, style = "B") # binary weight matrix
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

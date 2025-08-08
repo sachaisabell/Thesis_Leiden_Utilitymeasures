@@ -1,0 +1,14 @@
+---
+title: "joining_hotspots"
+output: pdf_document
+date: "2025-04-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## might be useful
+https://stackoverflow.com/questions/53854803/calculate-minimum-distance-between-multiple-polygons-with-r
+

@@ -1,0 +1,152 @@
+---
+title: "LISA measures"
+author: "Sacha van de Hoef"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Local Moran's I
+```{r}
+# note that this matrix is column standardized, otherwise change the w1[j,i] to w1[i,j]
+w1 = matrix(c(0,1/2,1/2,0,0,
+              1/3,0,1/3,1/3,0,
+              1/3,1/3,0,1/3,0,
+              0,1/3,1/3,0,1/3,
+              0,0,0,1,0), nrow = 5, ncol = 5)
+
+x.og = c(8,6,6,3,2)
+
+
+local_MI_function = function(data, w1){
+  n = length(data)
+  x.bar = mean(data)
+  LMIs = rep(NA,n)
+
+  for (i in 1:n) {
+    num = den = 0
+  
+    for (j in 1:n) {
+      num = num + w1[j,i]*(data[j] - x.bar)
+      den = den + (data[j] - x.bar)^2
+    }
+  
+    LMIs[i] = (data[i] - x.bar) * num / (den * 1/n)
+  }
+  
+  return(LMIs)
+}
+
+local_MI_function(x.og, w1)
+```
+
+
+## Gi & Gi* statistics
+```{r}
+d = matrix(c(
+  1,1,1,0,0,
+  1,1,1,1,0,
+  1,1,1,1,0,
+  0,1,1,1,1,
+  0,0,0,1,1
+), nrow = 5, ncol = 5)
+
+Gi_function = function(data, d, star = FALSE) {
+  n = length(data)
+  GIs = rep(NA,n)
+
+  for (i in 1:n) {
+    num = den = 0
+  
+    for (j in 1:n) {
+      if (star == TRUE & i == j) next
+      
+      else {
+        num = num + d[i,j] * data[j]
+        den = den + data[j]
+      }
+      
+    }
+  
+    GIs[i] = num / den
+  }
+  
+  return(GIs)
+}
+
+Gi_function(x.og, d, star = TRUE)
+
+```
+ 
+## Local Geary
+```{r}
+d1 = n1 = 0
+w1 = matrix(c(0,1/2,1/2,0,0,
+              1/3,0,1/3,1/3,0,
+              1/3,1/3,0,1/3,0,
+              0,1/3,1/3,0,1/3,
+              0,0,0,1,0), nrow = 5, ncol = 5)
+
+x.og = c(8,6,6,3,2)
+
+
+local_geary_function = function(data, w1){
+  n = length(data)
+  gearies = rep(NA, n)
+  x.bar = mean(data)
+  
+  m2 = sum((data - x.bar)^2)/(n-1)
+  
+  for (i in 1:n) {
+    geary = 0
+    
+    for (j in 1:n) {
+      geary = geary + w1[i,j] * (data[i] - data[j])^2
+      
+      
+      
+    }
+    gearies[i] = geary * (1/m2)
+  }
+  
+  return(gearies)
+}
+
+local_geary_function(x.og, w1)
+
+```
+```{r}
+x.og = matrix(c(2,4,0,0,0,0,4,2,0,0,0,0,
+                0,0,2,3,2,0,0,0,0,5,4,1,
+                0,0,3,4,2,0,0,0,0,4,0,2),
+                ncol = 6, nrow = 6, byrow = TRUE)
+
+raster = raster::raster(x.og)
+polygons = raster::rasterToPolygons(raster)
+neighbors = poly2nb(polygons, queen = TRUE)
+w1 = nb2mat(neighbors, style = "W")
+n = 36
+
+rast = rasterFromCells(x.og, 1:70)
+poly = poly2nb(rasterToPolygons(rast))
+nbw = nb2listw(poly)
+
+localC(c(x.og), nbw, zero.policy = TRUE)
+
+local_geary_function(c(x.og), w1)
+
+
+```
+
+## Local gamma (almost never used, no real examples online, base version of the local Moran etc.)
+matrix A: spatial similarity
+matrix B: value similarity (e.g. xixj, (xi-xj)^2, |xi-xj|)
+
+
+
+
+

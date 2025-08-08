@@ -1,0 +1,280 @@
+---
+title: "grid_contour_hotspot"
+output: pdf_document
+date: "2025-04-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+https://cran.r-project.org/web/packages/mapiso/mapiso.pdf
+```{r}
+library("mapiso")
+library(sdcSpatial)
+
+# the maps
+map_original = sdc_raster(dwellings[,1:2], dwellings$consumption)
+map_safe = protect_smooth(map_original)
+
+# the plots
+mfrow = c(1,2)
+plot(map_original)
+plot(map_safe)
+
+# the data
+## turning raster into matrices
+dat_original = raster::as.matrix(map_original$value$mean); dat_original[is.na(dat_original)] = 0
+dat_safe = raster::as.matrix(map_safe$value$mean); dat_safe[is.na(dat_safe)] = 0
+
+```
+
+
+```{r}
+library(terra)
+map_ras = rast(ncol = 61, nrow = 62)
+values(map_ras) <- (dat_original)
+
+
+map1 = mapiso(((map_ras)), 1000)
+
+plot(map1$isomax)
+```
+
+
+
+```{r}
+library(rgdal)
+
+
+# Load necessary libraries
+library(raster)
+library(rgdal)
+
+# Example grid (replace this with your actual grid data)
+set.seed(1)
+grid <- matrix(runif(100, 0, 100), nrow=10)  # This generates a 10x10 grid with values between 0 and 100
+
+# Threshold the grid to identify values above 50
+binary_grid <- grid > 50
+
+
+# Convert binary grid to raster object
+raster_grid <- raster(binary_grid)
+
+# Identify clusters of 1's (above 50) using connected component labeling
+cluster_labels <- clump(raster_grid, directions = 4) # 4 is rooks case, 8 is queens
+
+# Convert clusters to polygons
+polygons <- rasterToPolygons(cluster_labels, fun=function(x){x > 0}, dissolve=TRUE)
+
+# Plot the polygons
+plot(polygons, main="Clusters Above 50", col = "blue")
+
+
+```
+```{r}
+length(polygons) # 14
+
+plot(polygons[1:14,], col = 1:14)
+
+```
+
+
+
+```{r}
+grid_hotspot = function(matrix, value, adjacent = 8) {
+  binary_grid <- matrix > value # always bigger than in case of a hotspot to decide the contour
+
+  
+  # Convert binary grid to raster object
+  raster_grid <- raster(binary_grid)
+  
+  # Identify clusters of 1's (above value) using connected component labeling
+  cluster_labels <- clump(raster_grid, directions = adjacent()) # 4 is rooks case, 8 is queens
+  
+  # Convert clusters to polygons
+  polygons <- rasterToPolygons(cluster_labels, fun=function(x){x > 0}, dissolve=TRUE)
+  
+  return(polygons)
+}
+
+
+
+map_original = sdc_raster(dwellings[,1:2], dwellings$consumption)
+map_safe = protect_smooth(map_original)
+
+# the plots
+mfrow = c(1,2)
+plot(map_original)
+plot(map_safe)
+
+# the data
+## turning raster into matrices
+dat_original = raster::as.matrix(map_original$value$mean); dat_original[is.na(dat_original)] = 0
+dat_safe = raster::as.matrix(map_safe$value$mean); dat_safe[is.na(dat_safe)] = 0
+
+
+gridsf = grid_hotspot(dat_safe, 5000)
+plot(gridsf[1:length(gridsf),], col = 1:length(gridsf))
+```
+
+```{r}
+source("hotspot_functions.R")
+
+scale.center.poly(gridsf[1,])
+
+grid2 = st_as_sf(gridsf[1,])
+sgrid2 = scale.center.poly(grid2)
+
+plot(sgrid2$geometry, axes = TRUE)
+plot(gridsf[1,], axes = TRUE)
+```
+Now a real example on how to do the symmetric differences
+```{r}
+gridsf = grid_hotspot(dat_safe, 5000)
+gridog = grid_hotspot(dat_original, 5000)
+
+
+gridsf2 = st_as_sf(gridsf[1,])
+gridog2 = st_as_sf(gridog[1,])
+
+sgrid2 = scale.center.poly(gridsf2$geometry)
+ogrid2 = scale.center.poly(gridog2$geometry)
+
+symdiff2 = st_sym_difference(sgrid2, ogrid2)
+
+plot(ogrid2, axes = TRUE, col = "blue")              # the original hotspots
+plot(sgrid2, axes = TRUE, add = TRUE, col = "green") # the safe hotspots
+plot(symdiff2, add = TRUE, col = "red")
+```
+Hausdorff
+```{r}
+points.og1 = st_cast(ogrid2, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+points.sf1 = st_cast(sgrid2, "MULTIPOINT") %>% as("Spatial") %>% coordinates()
+
+# does not give the answer
+HausdorffDistance(points.og1, points.sf1, directed = FALSE)
+
+```
+
+
+#### angle measure
+```{r}
+
+map_original = sdc_raster(dwellings[,1:2], dwellings$consumption)
+map_safe = protect_smooth(map_original)
+
+dat_original = raster::as.matrix(map_original$value$mean); dat_original[is.na(dat_original)] = 0
+dat_safe = raster::as.matrix(map_safe$value$mean); dat_safe[is.na(dat_safe)] = 0
+
+
+gridsf = grid_hotspot(dat_safe, 5000)
+gridog = grid_hotspot(dat_original, 5000)
+
+
+gridsf2 = st_as_sf(gridsf[1,])
+gridog2 = st_as_sf(gridog[1,])
+
+sgrid2 = scale.center.poly(gridsf2$geometry)
+ogrid2 = scale.center.poly(gridog2$geometry)
+
+plot(sgrid2, axes = TRUE, col = "blue")              # the original hotspots
+plot(sgrid2, axes = TRUE, add = TRUE, col = "green") # the safe hotspots
+
+```
+
+```{r}
+plot(ogrid2, axes = TRUE, col = "blue")
+
+gridsf[1,]
+
+ogco = st_coordinates(st_cast(gridog2, "POLYGON"))
+plot(ogco[,1:2])
+```
+
+```{r}
+
+sfco = st_coordinates(st_cast(gridsf2, "POLYGON"))
+plot(sfco[,1:2])
+
+
+
+
+diff(ogco[,1]);diff(ogco[,2])
+
+ogco  = st_coordinates(st_cast(og.hs[1,], "POLYGON"))
+
+ogco = data.frame(x = c(1,3,2),
+                  y = c(1,1.5,2))
+plot(ogco[,1:2])
+changedf = data.frame(
+  x = c(diff(ogco[,1]),diff(ogco[,1])[1]),
+  y = c(diff(ogco[,2]),diff(ogco[,2])[1]))
+
+
+sum(diff(changedf$x) != 0 & diff(changedf$y) != 0)
+
+
+
+number_angels = function(hotspot){
+  ogco = st_coordinates(st_cast(hotspot, "POLYGON"))
+  changedf = data.frame(
+  x = c(diff(ogco[,1]),diff(ogco[,1])[1]),
+  y = c(diff(ogco[,2]),diff(ogco[,2])[1]))
+
+
+  sum(diff(changedf$x) != 0 & diff(changedf$y) != 0)
+}
+
+number_angels(og.hs[1,])
+number_angels(gridsf2)
+
+
+is(gridsf)
+
+unique(st_coordinates(st_cast(og.hs[1,], "POLYGON")))
+
+?diff
+
+todiff = 0.0001*c(0.05,0.06)
+diff(todiff)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

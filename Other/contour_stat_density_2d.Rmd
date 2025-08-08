@@ -1,0 +1,117 @@
+---
+title: "new contours"
+output: pdf_document
+date: "2025-03-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## the data
+```{r}
+df <- data.frame(x = c(abs(rnorm(200)), abs(rnorm(200,4))), y = c(abs(rnorm(200)), abs(rnorm(200,4))))
+
+```
+
+
+So basically what we need to do is:
+- decide from what value onwards something is hotspot
+- then create the contour of that value
+
+```{r}
+set.seed(1)
+df <- data.frame(x = c(abs(rnorm(200)), abs(rnorm(200,4))), y = c(abs(rnorm(200)), abs(rnorm(200,4))))
+
+```
+
+
+Let continue from this one
+
+```{r}
+point.plot = ggplot(df,aes(x, y))+
+  stat_density_2d(geom = "polygon", contour = TRUE,
+                  aes(fill = after_stat(level)), colour = "black",
+                  bins = 15) +
+  scale_fill_distiller(palette = "Blues", direction = 1) +theme_classic()
+
+point.plot
+```
+
+```{r}
+# retrieve the data
+plot.d = layer_data(point.plot)
+```
+
+```{r}
+# split the contours
+plot.d$pol <- paste0(plot.d$group)
+ids <- unique(plot.d$pol)
+
+# Split contours based on the id
+pols <- lapply(ids, function(x){
+  topol <- plot.d[which(plot.d$pol == x), c("x","y")]
+  closepol <- as.matrix(rbind(topol, topol[1, ]))
+
+  return((closepol))
+   
+})
+
+# 15 as an example, we see that it gets cut of 
+cont = pointList2poly(pols[15]) # bounding box + first polygon
+plot(cont, axes = TRUE)
+
+
+```
+
+```{r}
+# first find the start and endpoint of the polygon (because of the algorithm above we need last - 1)
+n = 15
+
+last.first = pols[[n]][c(1,nrow(pols[[n]])-1),]
+
+lapply(pols, function(x) )
+
+
+#### different appeaoch starting from the datasets itself
+# lets use level 14, retrieve fill using; plot.d[plot.d$piece == 14,]
+dat.14 = plot.d[plot.d$piece == 14,]
+dat.13 = plot.d[plot.d$piece == 13,]
+
+
+
+# now we need to join the two in the right way
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
